@@ -1,8 +1,12 @@
 # 爻 · 算
 
+[![CI](https://github.com/MaverickChou/yao-calculator/actions/workflows/ci.yml/badge.svg)](https://github.com/MaverickChou/yao-calculator/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-e0a33c.svg)](#许可)
+
 **用 [yao-lang](https://github.com/MaverickChou/yao-lang) 写的一台科学计算器。**
 
-打开 **`docs/index.html`** 就能用（单文件、离线、无依赖）。
+**[在线玩 →](https://maverickchou.github.io/yao-calculator/)**　·　离线版就是 `docs/index.html`（单文件，双击即开）
+
 按键能不能按、按完进入什么状态、括号还剩几层，由一份 `calc.yao` 状态机裁决；
 浮点数、函数、微积分交给宿主 JS —— 这正是 yao 的 SPEC 定下的分工。
 
@@ -93,8 +97,8 @@ $ node vendor/yao-lang/bin/yao.js check calc.yao
 
 ## 怎么用
 
-双击 `docs/index.html`。没有服务器、没有 npm install、没有 WASM。
-（仓库开启 GitHub Pages 后也可以直接从 `/docs` 发布。）
+**在线**：<https://maverickchou.github.io/yao-calculator/> （GitHub Pages，`/docs` 发布）。
+**离线**：双击 `docs/index.html`。没有服务器、没有 npm install、没有 WASM。
 
 键盘：`0-9 . + - * / ^ % ( )`、`Enter` 或 `=` 求值、`Backspace` 退格、`Esc` 清空，
 `p` 插入 π、`e` 插入 e、`s`/`c`/`t` 分别调 sin/cos/tan。
