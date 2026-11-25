@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>爻 · 算 —— 用 6 位状态机写的科学计算器</title>
+<style>/*__CSS__*/</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="top">
+    <div class="brand">
+      <div class="mark">爻</div>
+      <div class="brand-text">
+        <h1>爻 · 算</h1>
+        <p>按键合法性由一台 6 位状态机裁决 · 浮点运算交给宿主</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="chip" id="angle-btn" title="角度制 / 弧度制">DEG</button>
+      <button class="chip" id="copy-btn" title="复制完整精度的结果">复制</button>
+      <a class="chip" href="https://github.com/MaverickChou/yao-lang" target="_blank" rel="noreferrer">yao-lang ↗</a>
+    </div>
+  </header>
+
+  <main class="grid">
+
+    <div class="col-left">
+
+      <section class="card calc" aria-label="计算器">
+        <div class="screen">
+          <div class="screen-head">
+            <span class="pill" id="phase-pill">空白</span>
+            <span class="pill ghosty" id="depth-pill">括号 0</span>
+            <span class="pill ghosty" id="angle-pill">RAD</span>
+          </div>
+          <div class="expr" id="expr" aria-live="polite">0</div>
+          <div class="hint" id="hint">先输入数字，再按函数或运算符。括号没闭合时按 = 会自动补齐。</div>
+        </div>
+        <div class="pad" id="pad"></div>
+      </section>
+
+      <section class="card phases" aria-label="相位与按键">
+        <div class="card-head">
+          <h2>相位与按键</h2>
+          <span class="tag">穷举校验通过</span>
+        </div>
+        <p class="phases-note">
+          6 位状态 = 低 3 位<b>相位</b> + 高 3 位<b>括号深度</b>。每个相位接受哪些键，
+          完全由 <code>calc.yao</code> 的转移规则决定；没写规则的组合就是「此路不通」。
+        </p>
+        <div class="phase-pills" id="phase-pills"></div>
+        <div class="pn-title" id="pn-title"></div>
+        <div class="pn-keys" id="phase-keys"></div>
+        <p class="phases-foot">
+          <span>可达 <b>257</b> / 4096 态</span>
+          <span>死态 <b>0</b></span>
+          <span>声明的 7 个相位全部可达</span>
+        </p>
+      </section>
+
+    </div>
+
+    <div class="side">
+
+      <section class="card machine" aria-label="爻状态机">
+        <div class="card-head">
+          <h2>爻 · 状态机</h2>
+          <span class="tag">calc.yao</span>
+        </div>
+
+        <div class="hero">
+          <div class="glyph" id="m-glyph">䷁</div>
+          <div class="hero-text">
+            <div class="hero-phase"><span id="m-phase">空白</span><span class="hero-code" id="m-code">相位 0</span></div>
+            <div class="hero-sub" id="m-gua">坤 · 本 000000 · 动 0</div>
+          </div>
+        </div>
+
+        <div class="bits-cap">本卦 6 位 · 初 → 上（初爻 = bit 0）</div>
+        <div class="bits" id="m-bits"></div>
+
+        <div class="depth-row">
+          <span class="lbl">括号深度（存在「动」字段里）</span>
+          <div class="depth-bar"><i id="m-depth-fill"></i></div>
+          <span class="val" id="m-depth-val">0</span>
+        </div>
+
+        <div class="log-head">
+          <span>最近转移</span>
+          <span class="muted" id="m-steps">0 步</span>
+        </div>
+        <ol class="log" id="m-log"></ol>
+
+        <details class="src">
+          <summary>看这台机器的源码（calc.yao）</summary>
+          <pre id="m-src"></pre>
+        </details>
+      </section>
+
+      <section class="card calculus" aria-label="微积分">
+        <div class="card-head">
+          <h2>微积分</h2>
+          <span class="tag">数值方法</span>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="int" role="tab">定积分 ∫</button>
+          <button class="tab" data-tab="der" role="tab">导数 d/dx</button>
+        </div>
+
+        <div class="calc-form" id="form-int">
+          <label class="field wide">
+            <span>被积函数 f(x)</span>
+            <input id="int-f" type="text" value="x^2" spellcheck="false" autocomplete="off">
+          </label>
+          <div class="field-row">
+            <label class="field"><span>下限 a</span><input id="int-a" type="text" value="0" spellcheck="false"></label>
+            <label class="field"><span>上限 b</span><input id="int-b" type="text" value="1" spellcheck="false"></label>
+          </div>
+          <div class="form-actions">
+            <button class="go" id="int-go">计算 ∫</button>
+            <button class="ghost" id="int-fill" disabled>填入计算器</button>
+          </div>
+          <div class="calc-out" id="int-out"></div>
+        </div>
+
+        <div class="calc-form hidden" id="form-der">
+          <label class="field wide">
+            <span>函数 f(x)</span>
+            <input id="der-f" type="text" value="sin(x)" spellcheck="false" autocomplete="off">
+          </label>
+          <div class="field-row">
+            <label class="field"><span>求导点 x₀</span><input id="der-x" type="text" value="0" spellcheck="false"></label>
+            <label class="field dim"><span>方法</span><input type="text" value="四点差分 + Richardson" disabled></label>
+          </div>
+          <div class="form-actions">
+            <button class="go" id="der-go">计算 f′(x₀)</button>
+            <button class="ghost" id="der-fill" disabled>填入计算器</button>
+          </div>
+          <div class="calc-out" id="der-out"></div>
+        </div>
+
+        <p class="note">f(x) 里可以用 <code>x</code>、<code>pi</code>、<code>e</code>，以及 sin cos tan ln lg log₂ √ ^ ! 等。
+          角度制跟随上方的 DEG/RAD。</p>
+      </section>
+
+    </div>
+
+    <section class="card history" aria-label="历史">
+      <div class="card-head">
+        <h2>历史</h2>
+        <button class="ghost small" id="clear-history">清空</button>
+      </div>
+      <ul class="tape" id="tape"><li class="empty">还没有计算记录。按 = 之后，算式会落在这里。</li></ul>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <span>状态机：<code>calc.yao</code> · 7 个相位 × 64 层括号 · 257 个可达状态，穷举校验无死态</span>
+    <span>内核：<a href="https://github.com/MaverickChou/yao-lang" target="_blank" rel="noreferrer">yao-lang</a> v0.1 · MIT OR Apache-2.0</span>
+  </footer>
+
+</div>
+<script>/*__SCRIPT__*/</script>
+</body>
+</html>

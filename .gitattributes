@@ -1,0 +1,15 @@
+# 换行与文本属性
+* text=auto
+
+# 一律 LF
+*.js   text eol=lf
+*.mjs  text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.html text eol=lf
+*.css  text eol=lf
+*.yao  text eol=lf
+*.yml  text eol=lf
+
+# 二进制
+*.png binary

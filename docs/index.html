@@ -1,0 +1,4102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>爻 · 算 —— 用 6 位状态机写的科学计算器</title>
+<style>:root {
+  --bg: #080a0e;
+  --panel: #11161e;
+  --panel-2: #171e28;
+  --line: #232c3a;
+  --line-soft: #1b2330;
+  --text: #e8ecf3;
+  --muted: #8b97a9;
+  --muted-2: #6b7788;
+  --gold: #e0a33c;
+  --gold-2: #f4c66d;
+  --jade: #5fd0b0;
+  --red: #ec6773;
+  --mono: "JetBrains Mono", "SFMono-Regular", ui-monospace, "Cascadia Code", Consolas, monospace;
+  --sans: "Inter", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; padding: 0; }
+
+body {
+  background:
+    radial-gradient(900px 600px at 12% -10%, rgba(224, 163, 60, 0.10), transparent 60%),
+    radial-gradient(1000px 700px at 105% 10%, rgba(95, 208, 176, 0.07), transparent 55%),
+    radial-gradient(600px 500px at 50% 120%, rgba(224, 163, 60, 0.05), transparent 60%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(ellipse at 50% 0%, black, transparent 78%);
+}
+
+.page {
+  position: relative;
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 30px 22px 48px;
+}
+
+/* ---------------------------------------------------------------- 顶部 */
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+}
+
+.brand { display: flex; align-items: center; gap: 14px; }
+
+.mark {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  border-radius: 13px;
+  background: linear-gradient(145deg, #f4c66d, #c98a26 70%);
+  color: #17130a;
+  font-size: 25px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(224, 163, 60, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.brand-text h1 {
+  margin: 0;
+  font-size: 21px;
+  letter-spacing: 0.04em;
+  font-weight: 650;
+}
+
+.brand-text p {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+
+.top-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.chip {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: rgba(23, 30, 40, 0.7);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: 0.15s ease;
+  letter-spacing: 0.02em;
+}
+
+.chip:hover { color: var(--text); border-color: #38465a; background: #1b232f; }
+.chip.on { color: var(--gold-2); border-color: rgba(224, 163, 60, 0.5); background: rgba(224, 163, 60, 0.1); }
+
+/* ---------------------------------------------------------------- 布局 */
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.side { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+.col-left { display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+
+.card {
+  background: linear-gradient(180deg, rgba(23, 30, 40, 0.92), rgba(15, 20, 27, 0.92));
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  padding: 18px;
+  min-width: 0;
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.card-head h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tag {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted-2);
+  border: 1px solid var(--line-soft);
+  padding: 3px 8px;
+  border-radius: 999px;
+}
+
+/* ---------------------------------------------------------------- 屏幕 */
+
+.calc { padding: 18px 18px 20px; }
+
+.screen {
+  position: relative;
+  border-radius: 16px;
+  border: 1px solid #202938;
+  background:
+    linear-gradient(180deg, rgba(224, 163, 60, 0.045), transparent 40%),
+    #0a0e14;
+  padding: 14px 16px 12px;
+  overflow: hidden;
+  box-shadow: inset 0 2px 24px rgba(0, 0, 0, 0.55);
+}
+
+.screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 3px);
+}
+
+.screen-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.pill {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: var(--jade);
+  background: rgba(95, 208, 176, 0.09);
+  border: 1px solid rgba(95, 208, 176, 0.22);
+}
+
+.pill.ghosty {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.02);
+  border-color: var(--line-soft);
+}
+
+.pill.error { color: var(--red); background: rgba(236, 103, 115, 0.1); border-color: rgba(236, 103, 115, 0.3); }
+
+.expr {
+  font-family: var(--mono);
+  font-size: clamp(25px, 3.2vw, 38px);
+  line-height: 1.22;
+  text-align: right;
+  min-height: 1.3em;
+  color: #f5f7fb;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+  text-shadow: 0 0 32px rgba(224, 163, 60, 0.12);
+}
+
+.expr .ghost { color: rgba(139, 151, 169, 0.45); }
+.expr .caret {
+  display: inline-block;
+  width: 2px;
+  height: 0.95em;
+  background: var(--gold);
+  vertical-align: -0.1em;
+  margin-left: 2px;
+  animation: blink 1.1s steps(1) infinite;
+}
+
+@keyframes blink { 50% { opacity: 0; } }
+
+.hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-2);
+  text-align: right;
+  min-height: 18px;
+  transition: color 0.2s;
+}
+
+.hint.err { color: var(--red); }
+.hint.ok { color: var(--jade); }
+
+.screen.shake { animation: shake 0.28s ease; }
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  60% { transform: translateX(4px); }
+  80% { transform: translateX(-2px); }
+}
+
+/* ---------------------------------------------------------------- 键盘 */
+
+.pad { margin-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+
+.sci, .core { display: grid; gap: 8px; }
+.sci { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.core { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+button.key {
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #1b232e, #141a23);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 17px;
+  height: 50px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: background 0.12s ease, border-color 0.12s ease, transform 0.06s ease;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 4px 10px rgba(0, 0, 0, 0.25);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  padding: 0 2px;
+  white-space: nowrap;
+}
+
+button.key:hover { background: linear-gradient(180deg, #222c39, #18202b); border-color: #334154; }
+button.key:active { transform: translateY(1px) scale(0.985); }
+
+button.key.sci-key {
+  height: 40px;
+  font-size: 13.5px;
+  color: #aab6c7;
+  background: linear-gradient(180deg, #161d26, #111720);
+  font-family: var(--mono);
+}
+
+button.key.sci-key:hover { color: var(--text); }
+
+button.key.op { color: var(--gold-2); font-size: 20px; }
+button.key.clear { color: var(--red); font-size: 15px; }
+button.key.del { font-size: 18px; color: #b9c4d3; }
+
+button.key.eq {
+  background: linear-gradient(180deg, #f4c66d, #d1932c);
+  border-color: #f6d28d;
+  color: #191307;
+  font-weight: 700;
+  font-size: 22px;
+  box-shadow: 0 8px 20px rgba(224, 163, 60, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+button.key.eq:hover { background: linear-gradient(180deg, #ffd684, #e0a33c); }
+
+button.key.reject { animation: reject 0.3s ease; }
+@keyframes reject {
+  0%, 100% { border-color: var(--line); }
+  40% { border-color: var(--red); background: rgba(236, 103, 115, 0.14); }
+}
+
+/* ---------------------------------------------------------------- 状态机 */
+
+.hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px;
+  border-radius: 14px;
+  background: radial-gradient(120% 160% at 0% 0%, rgba(95, 208, 176, 0.10), transparent 60%), #0d1219;
+  border: 1px solid var(--line-soft);
+}
+
+.glyph {
+  font-size: 34px;
+  line-height: 1;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--gold-2);
+  background: rgba(224, 163, 60, 0.07);
+  border: 1px solid rgba(224, 163, 60, 0.18);
+}
+
+.hero-phase {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.hero-code {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--jade);
+  background: rgba(95, 208, 176, 0.08);
+  border: 1px solid rgba(95, 208, 176, 0.18);
+  border-radius: 5px;
+  padding: 1px 5px;
+}
+
+.hero-sub {
+  margin-top: 4px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.bits-cap {
+  margin: 14px 0 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  color: var(--muted-2);
+}
+
+.bits { display: flex; gap: 6px; }
+
+.bit {
+  flex: 1;
+  height: 34px;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--mono);
+  border: 1px solid var(--line-soft);
+  background: #0b1017;
+  color: var(--muted-2);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.bit b {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  opacity: 0.75;
+}
+
+.bit.yang {
+  color: var(--gold-2);
+  border-color: rgba(224, 163, 60, 0.42);
+  background: rgba(224, 163, 60, 0.09);
+}
+
+.bit.yang b { opacity: 1; text-shadow: 0 0 14px rgba(244, 198, 109, 0.45); }
+
+.bit.yin { background: #0a0f16; }
+
+.depth-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.depth-row .lbl { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.depth-row .val { font-family: var(--mono); color: var(--text); min-width: 2.5ch; text-align: right; }
+
+.depth-bar {
+  width: 84px;
+  height: 6px;
+  background: #0b1017;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  overflow: hidden;
+  flex: none;
+}
+
+.depth-bar i {
+  display: block;
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--jade), var(--gold));
+  transition: width 0.18s ease;
+}
+
+.log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 16px 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+}
+
+.muted { color: var(--muted-2); }
+
+.log {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  border-top: 1px solid var(--line-soft);
+}
+
+.log li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 5px 2px;
+  border-bottom: 1px solid rgba(35, 44, 58, 0.5);
+  color: var(--muted);
+  animation: rowin 0.22s ease;
+}
+
+@keyframes rowin { from { opacity: 0; transform: translateY(-3px); } }
+
+.log li .ev { color: var(--text); }
+.log li .ev.fail { color: var(--red); }
+.log li .to { color: var(--jade); }
+.log li .arrow { color: var(--muted-2); padding: 0 4px; }
+.log li .empty { color: var(--muted-2); }
+
+details.src { margin-top: 14px; }
+
+details.src summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--muted);
+  list-style: none;
+  padding: 6px 0;
+  border-top: 1px dashed var(--line-soft);
+}
+
+details.src summary::-webkit-details-marker { display: none; }
+details.src summary:hover { color: var(--gold-2); }
+
+details.src pre {
+  margin: 8px 0 0;
+  max-height: 280px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: #a9b6c8;
+  background: #0a0e14;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 10px 12px;
+  white-space: pre;
+}
+
+/* ---------------------------------------------------------------- 相位 */
+
+.phases-note {
+  margin: 0 0 12px;
+  font-size: 11.5px;
+  line-height: 1.75;
+  color: var(--muted-2);
+}
+
+.phases-note b { color: var(--muted); font-weight: 600; }
+
+.phase-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.phase-pill {
+  appearance: none;
+  border: 1px solid var(--line-soft);
+  background: #0b1017;
+  color: var(--muted-2);
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 9px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.phase-pill:hover { color: var(--text); border-color: #38465a; }
+.phase-pill.on { color: var(--jade); border-color: rgba(95, 208, 176, 0.4); background: rgba(95, 208, 176, 0.08); }
+.phase-pill.peek { color: var(--gold-2); border-color: rgba(224, 163, 60, 0.45); background: rgba(224, 163, 60, 0.08); }
+
+.pn-title {
+  margin-top: 12px;
+  font-size: 10.5px;
+  color: var(--muted-2);
+  letter-spacing: 0.03em;
+}
+
+.pn-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+  min-height: 42px;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.012);
+}
+
+.pn-keys .k {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: #b7c2d2;
+  border: 1px solid var(--line-soft);
+  background: #0b1017;
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+
+.pn-keys .k.deny { color: var(--muted-2); border-style: dashed; opacity: 0.5; }
+.pn-keys .none { color: var(--muted-2); font-size: 11px; }
+
+.phases-foot {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 12px 0 0;
+  font-size: 10.5px;
+  color: var(--muted-2);
+}
+
+.phases-foot b { color: var(--muted); }
+
+/* ---------------------------------------------------------------- 微积分 */
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  background: #0b1017;
+  border: 1px solid var(--line-soft);
+  border-radius: 11px;
+  margin-bottom: 14px;
+}
+
+.tab {
+  flex: 1;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+.tab.active { background: #1c2431; color: var(--text); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset; }
+
+.calc-form { display: flex; flex-direction: column; gap: 10px; }
+.calc-form.hidden { display: none; }
+
+.field { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 0; }
+.field.wide { width: 100%; }
+
+.field span { font-size: 11px; color: var(--muted-2); letter-spacing: 0.05em; }
+
+.field input {
+  appearance: none;
+  width: 100%;
+  border: 1px solid var(--line);
+  background: #0a0e14;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 14px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.field input:focus { border-color: rgba(224, 163, 60, 0.55); box-shadow: 0 0 0 3px rgba(224, 163, 60, 0.1); }
+.field input:disabled { color: var(--muted); opacity: 0.65; }
+.field.dim { opacity: 0.8; }
+
+.field-row { display: flex; gap: 10px; }
+
+.form-actions { display: flex; gap: 8px; margin-top: 2px; }
+
+button.go {
+  appearance: none;
+  border: 1px solid rgba(224, 163, 60, 0.45);
+  background: rgba(224, 163, 60, 0.13);
+  color: var(--gold-2);
+  font: inherit;
+  font-size: 13px;
+  padding: 9px 16px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+button.go:hover { background: rgba(224, 163, 60, 0.2); }
+
+button.ghost {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  padding: 9px 14px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: 0.15s;
+}
+
+button.ghost:hover:not(:disabled) { color: var(--text); border-color: #38465a; }
+button.ghost:disabled { opacity: 0.4; cursor: not-allowed; }
+button.ghost.small { font-size: 11.5px; padding: 4px 10px; }
+
+.calc-out {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  min-height: 20px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line-soft);
+  word-break: break-all;
+}
+
+.calc-out .big { color: var(--jade); font-size: 20px; }
+.calc-out .k { color: var(--muted-2); }
+.calc-out .err { color: var(--red); }
+
+.note {
+  margin: 12px 0 0;
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--muted-2);
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.95em;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+/* ---------------------------------------------------------------- 历史 */
+
+.history { grid-column: 1 / -1; }
+
+.tape {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.tape li {
+  border: 1px solid var(--line-soft);
+  background: #0b1017;
+  border-radius: 10px;
+  padding: 9px 11px;
+  cursor: pointer;
+  transition: 0.15s;
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow: hidden;
+}
+
+.tape li:hover { border-color: #38465a; background: #101722; }
+.tape li .h-expr { color: var(--muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tape li .h-val { color: var(--text); display: block; margin-top: 3px; }
+.tape li .h-val::before { content: "= "; color: var(--muted-2); }
+.tape li.empty { cursor: default; color: var(--muted-2); grid-column: 1 / -1; }
+.tape li.empty:hover { border-color: var(--line-soft); background: #0b1017; }
+
+/* ---------------------------------------------------------------- 页脚 */
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  font-size: 11.5px;
+  color: var(--muted-2);
+}
+
+.foot a { color: var(--muted); text-decoration: none; border-bottom: 1px dotted #3a4759; }
+.foot a:hover { color: var(--gold-2); }
+
+/* ---------------------------------------------------------------- 响应式 */
+
+@media (max-width: 1040px) {
+  .grid { grid-template-columns: minmax(0, 1fr); }
+  .history { grid-column: auto; }
+  .expr { font-size: clamp(24px, 5.4vw, 34px); }
+}
+
+@media (max-width: 560px) {
+  .page { padding: 18px 12px 32px; }
+  .card { padding: 14px; border-radius: 16px; }
+  button.key { height: 46px; font-size: 16px; }
+  button.key.sci-key { height: 36px; font-size: 12px; }
+  .brand-text p { display: none; }
+  .field-row { flex-direction: column; }
+  .log { font-size: 10px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.001s !important; transition-duration: 0.001s !important; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="top">
+    <div class="brand">
+      <div class="mark">爻</div>
+      <div class="brand-text">
+        <h1>爻 · 算</h1>
+        <p>按键合法性由一台 6 位状态机裁决 · 浮点运算交给宿主</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="chip" id="angle-btn" title="角度制 / 弧度制">DEG</button>
+      <button class="chip" id="copy-btn" title="复制完整精度的结果">复制</button>
+      <a class="chip" href="https://github.com/MaverickChou/yao-lang" target="_blank" rel="noreferrer">yao-lang ↗</a>
+    </div>
+  </header>
+
+  <main class="grid">
+
+    <div class="col-left">
+
+      <section class="card calc" aria-label="计算器">
+        <div class="screen">
+          <div class="screen-head">
+            <span class="pill" id="phase-pill">空白</span>
+            <span class="pill ghosty" id="depth-pill">括号 0</span>
+            <span class="pill ghosty" id="angle-pill">RAD</span>
+          </div>
+          <div class="expr" id="expr" aria-live="polite">0</div>
+          <div class="hint" id="hint">先输入数字，再按函数或运算符。括号没闭合时按 = 会自动补齐。</div>
+        </div>
+        <div class="pad" id="pad"></div>
+      </section>
+
+      <section class="card phases" aria-label="相位与按键">
+        <div class="card-head">
+          <h2>相位与按键</h2>
+          <span class="tag">穷举校验通过</span>
+        </div>
+        <p class="phases-note">
+          6 位状态 = 低 3 位<b>相位</b> + 高 3 位<b>括号深度</b>。每个相位接受哪些键，
+          完全由 <code>calc.yao</code> 的转移规则决定；没写规则的组合就是「此路不通」。
+        </p>
+        <div class="phase-pills" id="phase-pills"></div>
+        <div class="pn-title" id="pn-title"></div>
+        <div class="pn-keys" id="phase-keys"></div>
+        <p class="phases-foot">
+          <span>可达 <b>257</b> / 4096 态</span>
+          <span>死态 <b>0</b></span>
+          <span>声明的 7 个相位全部可达</span>
+        </p>
+      </section>
+
+    </div>
+
+    <div class="side">
+
+      <section class="card machine" aria-label="爻状态机">
+        <div class="card-head">
+          <h2>爻 · 状态机</h2>
+          <span class="tag">calc.yao</span>
+        </div>
+
+        <div class="hero">
+          <div class="glyph" id="m-glyph">䷁</div>
+          <div class="hero-text">
+            <div class="hero-phase"><span id="m-phase">空白</span><span class="hero-code" id="m-code">相位 0</span></div>
+            <div class="hero-sub" id="m-gua">坤 · 本 000000 · 动 0</div>
+          </div>
+        </div>
+
+        <div class="bits-cap">本卦 6 位 · 初 → 上（初爻 = bit 0）</div>
+        <div class="bits" id="m-bits"></div>
+
+        <div class="depth-row">
+          <span class="lbl">括号深度（存在「动」字段里）</span>
+          <div class="depth-bar"><i id="m-depth-fill"></i></div>
+          <span class="val" id="m-depth-val">0</span>
+        </div>
+
+        <div class="log-head">
+          <span>最近转移</span>
+          <span class="muted" id="m-steps">0 步</span>
+        </div>
+        <ol class="log" id="m-log"></ol>
+
+        <details class="src">
+          <summary>看这台机器的源码（calc.yao）</summary>
+          <pre id="m-src"></pre>
+        </details>
+      </section>
+
+      <section class="card calculus" aria-label="微积分">
+        <div class="card-head">
+          <h2>微积分</h2>
+          <span class="tag">数值方法</span>
+        </div>
+
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="int" role="tab">定积分 ∫</button>
+          <button class="tab" data-tab="der" role="tab">导数 d/dx</button>
+        </div>
+
+        <div class="calc-form" id="form-int">
+          <label class="field wide">
+            <span>被积函数 f(x)</span>
+            <input id="int-f" type="text" value="x^2" spellcheck="false" autocomplete="off">
+          </label>
+          <div class="field-row">
+            <label class="field"><span>下限 a</span><input id="int-a" type="text" value="0" spellcheck="false"></label>
+            <label class="field"><span>上限 b</span><input id="int-b" type="text" value="1" spellcheck="false"></label>
+          </div>
+          <div class="form-actions">
+            <button class="go" id="int-go">计算 ∫</button>
+            <button class="ghost" id="int-fill" disabled>填入计算器</button>
+          </div>
+          <div class="calc-out" id="int-out"></div>
+        </div>
+
+        <div class="calc-form hidden" id="form-der">
+          <label class="field wide">
+            <span>函数 f(x)</span>
+            <input id="der-f" type="text" value="sin(x)" spellcheck="false" autocomplete="off">
+          </label>
+          <div class="field-row">
+            <label class="field"><span>求导点 x₀</span><input id="der-x" type="text" value="0" spellcheck="false"></label>
+            <label class="field dim"><span>方法</span><input type="text" value="四点差分 + Richardson" disabled></label>
+          </div>
+          <div class="form-actions">
+            <button class="go" id="der-go">计算 f′(x₀)</button>
+            <button class="ghost" id="der-fill" disabled>填入计算器</button>
+          </div>
+          <div class="calc-out" id="der-out"></div>
+        </div>
+
+        <p class="note">f(x) 里可以用 <code>x</code>、<code>pi</code>、<code>e</code>，以及 sin cos tan ln lg log₂ √ ^ ! 等。
+          角度制跟随上方的 DEG/RAD。</p>
+      </section>
+
+    </div>
+
+    <section class="card history" aria-label="历史">
+      <div class="card-head">
+        <h2>历史</h2>
+        <button class="ghost small" id="clear-history">清空</button>
+      </div>
+      <ul class="tape" id="tape"><li class="empty">还没有计算记录。按 = 之后，算式会落在这里。</li></ul>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <span>状态机：<code>calc.yao</code> · 7 个相位 × 64 层括号 · 257 个可达状态，穷举校验无死态</span>
+    <span>内核：<a href="https://github.com/MaverickChou/yao-lang" target="_blank" rel="noreferrer">yao-lang</a> v0.1 · MIT OR Apache-2.0</span>
+  </footer>
+
+</div>
+<script>/* 由 build.mjs 生成，请勿手工修改。 */
+"use strict";
+globalThis.__YAO_DATA__ = {"hexagrams":{"spec_version":"0.1","language":"爻","encoding":{"word_bits":6,"line_order":"bit0 = 初爻（最下），bit5 = 上爻（最上）","hexagram":"卦 = 低 6 位；下卦 = bits0..2，上卦 = bits3..5","bian":"变 = 低 6 位 本卦 + 高 6 位 动爻掩码；之卦 = 本 ^ 动","glyph_block":"U+4DC0..U+4DFF，按文王序排列"},"trigrams":[{"name":"乾","value":7,"glyph":"☰","image":"天","de":"健","binary":"111"},{"name":"兑","value":3,"glyph":"☱","image":"泽","de":"悦","binary":"011"},{"name":"离","value":5,"glyph":"☲","image":"火","de":"丽","binary":"101"},{"name":"震","value":1,"glyph":"☳","image":"雷","de":"动","binary":"001"},{"name":"巽","value":6,"glyph":"☴","image":"风","de":"入","binary":"110"},{"name":"坎","value":2,"glyph":"☵","image":"水","de":"陷","binary":"010"},{"name":"艮","value":4,"glyph":"☶","image":"山","de":"止","binary":"100"},{"name":"坤","value":0,"glyph":"☷","image":"地","de":"顺","binary":"000"}],"hexagrams":[{"order":1,"id":63,"name":"乾","glyph":"䷀","binary":"111111","upper":"乾","lower":"乾","pinyin":"qian","alias":[],"dangwei":3,"cuo":"坤","zong":"乾","hu":"乾"},{"order":2,"id":0,"name":"坤","glyph":"䷁","binary":"000000","upper":"坤","lower":"坤","pinyin":"kun","alias":[],"dangwei":3,"cuo":"乾","zong":"坤","hu":"坤"},{"order":3,"id":17,"name":"屯","glyph":"䷂","binary":"010001","upper":"坎","lower":"震","pinyin":"zhun","alias":[],"dangwei":5,"cuo":"鼎","zong":"蒙","hu":"剥"},{"order":4,"id":34,"name":"蒙","glyph":"䷃","binary":"100010","upper":"艮","lower":"坎","pinyin":"meng","alias":[],"dangwei":1,"cuo":"革","zong":"屯","hu":"复"},{"order":5,"id":23,"name":"需","glyph":"䷄","binary":"010111","upper":"坎","lower":"乾","pinyin":"xu","alias":[],"dangwei":5,"cuo":"晋","zong":"讼","hu":"睽"},{"order":6,"id":58,"name":"讼","glyph":"䷅","binary":"111010","upper":"乾","lower":"坎","pinyin":"song","alias":["訟"],"dangwei":1,"cuo":"明夷","zong":"需","hu":"家人"},{"order":7,"id":2,"name":"师","glyph":"䷆","binary":"000010","upper":"坤","lower":"坎","pinyin":"shi","alias":["師"],"dangwei":2,"cuo":"同人","zong":"比","hu":"复"},{"order":8,"id":16,"name":"比","glyph":"䷇","binary":"010000","upper":"坎","lower":"坤","pinyin":"bi","alias":[],"dangwei":4,"cuo":"大有","zong":"师","hu":"剥"},{"order":9,"id":55,"name":"小畜","glyph":"䷈","binary":"110111","upper":"巽","lower":"乾","pinyin":"xiaoxu","alias":[],"dangwei":4,"cuo":"豫","zong":"履","hu":"睽"},{"order":10,"id":59,"name":"履","glyph":"䷉","binary":"111011","upper":"乾","lower":"兑","pinyin":"lv","alias":[],"dangwei":2,"cuo":"谦","zong":"小畜","hu":"家人"},{"order":11,"id":7,"name":"泰","glyph":"䷊","binary":"000111","upper":"坤","lower":"乾","pinyin":"tai","alias":[],"dangwei":4,"cuo":"否","zong":"否","hu":"归妹"},{"order":12,"id":56,"name":"否","glyph":"䷋","binary":"111000","upper":"乾","lower":"坤","pinyin":"pi","alias":[],"dangwei":2,"cuo":"泰","zong":"泰","hu":"渐"},{"order":13,"id":61,"name":"同人","glyph":"䷌","binary":"111101","upper":"乾","lower":"离","pinyin":"tongren","alias":[],"dangwei":4,"cuo":"师","zong":"大有","hu":"姤"},{"order":14,"id":47,"name":"大有","glyph":"䷍","binary":"101111","upper":"离","lower":"乾","pinyin":"dayou","alias":[],"dangwei":2,"cuo":"比","zong":"同人","hu":"夬"},{"order":15,"id":4,"name":"谦","glyph":"䷎","binary":"000100","upper":"坤","lower":"艮","pinyin":"qian2","alias":["謙"],"dangwei":4,"cuo":"履","zong":"豫","hu":"解"},{"order":16,"id":8,"name":"豫","glyph":"䷏","binary":"001000","upper":"震","lower":"坤","pinyin":"yu","alias":[],"dangwei":2,"cuo":"小畜","zong":"谦","hu":"蹇"},{"order":17,"id":25,"name":"随","glyph":"䷐","binary":"011001","upper":"兑","lower":"震","pinyin":"sui","alias":["隨"],"dangwei":4,"cuo":"蛊","zong":"蛊","hu":"渐"},{"order":18,"id":38,"name":"蛊","glyph":"䷑","binary":"100110","upper":"艮","lower":"巽","pinyin":"gu","alias":["蠱"],"dangwei":2,"cuo":"随","zong":"随","hu":"归妹"},{"order":19,"id":3,"name":"临","glyph":"䷒","binary":"000011","upper":"坤","lower":"兑","pinyin":"lin","alias":["臨"],"dangwei":3,"cuo":"遯","zong":"观","hu":"复"},{"order":20,"id":48,"name":"观","glyph":"䷓","binary":"110000","upper":"巽","lower":"坤","pinyin":"guan","alias":["觀"],"dangwei":3,"cuo":"大壮","zong":"临","hu":"剥"},{"order":21,"id":41,"name":"噬嗑","glyph":"䷔","binary":"101001","upper":"离","lower":"震","pinyin":"shike","alias":[],"dangwei":2,"cuo":"井","zong":"贲","hu":"蹇"},{"order":22,"id":37,"name":"贲","glyph":"䷕","binary":"100101","upper":"艮","lower":"离","pinyin":"bi2","alias":["賁"],"dangwei":4,"cuo":"困","zong":"噬嗑","hu":"解"},{"order":23,"id":32,"name":"剥","glyph":"䷖","binary":"100000","upper":"艮","lower":"坤","pinyin":"bo","alias":["剝"],"dangwei":2,"cuo":"夬","zong":"复","hu":"坤"},{"order":24,"id":1,"name":"复","glyph":"䷗","binary":"000001","upper":"坤","lower":"震","pinyin":"fu","alias":["復"],"dangwei":4,"cuo":"姤","zong":"剥","hu":"坤"},{"order":25,"id":57,"name":"无妄","glyph":"䷘","binary":"111001","upper":"乾","lower":"震","pinyin":"wuwang","alias":["无妄","無妄"],"dangwei":3,"cuo":"升","zong":"大畜","hu":"渐"},{"order":26,"id":39,"name":"大畜","glyph":"䷙","binary":"100111","upper":"艮","lower":"乾","pinyin":"daxu","alias":[],"dangwei":3,"cuo":"萃","zong":"无妄","hu":"归妹"},{"order":27,"id":33,"name":"颐","glyph":"䷚","binary":"100001","upper":"艮","lower":"震","pinyin":"yi2","alias":["頤","頥"],"dangwei":3,"cuo":"大过","zong":"颐","hu":"坤"},{"order":28,"id":30,"name":"大过","glyph":"䷛","binary":"011110","upper":"兑","lower":"巽","pinyin":"daguo","alias":["大過"],"dangwei":3,"cuo":"颐","zong":"大过","hu":"乾"},{"order":29,"id":18,"name":"坎","glyph":"䷜","binary":"010010","upper":"坎","lower":"坎","pinyin":"kan","alias":[],"dangwei":3,"cuo":"离","zong":"坎","hu":"颐"},{"order":30,"id":45,"name":"离","glyph":"䷝","binary":"101101","upper":"离","lower":"离","pinyin":"li","alias":["離"],"dangwei":3,"cuo":"坎","zong":"离","hu":"大过"},{"order":31,"id":28,"name":"咸","glyph":"䷞","binary":"011100","upper":"兑","lower":"艮","pinyin":"xian","alias":[],"dangwei":4,"cuo":"损","zong":"恒","hu":"姤"},{"order":32,"id":14,"name":"恒","glyph":"䷟","binary":"001110","upper":"震","lower":"巽","pinyin":"heng","alias":["恆"],"dangwei":2,"cuo":"益","zong":"咸","hu":"夬"},{"order":33,"id":60,"name":"遯","glyph":"䷠","binary":"111100","upper":"乾","lower":"艮","pinyin":"dun","alias":["遁"],"dangwei":3,"cuo":"临","zong":"大壮","hu":"姤"},{"order":34,"id":15,"name":"大壮","glyph":"䷡","binary":"001111","upper":"震","lower":"乾","pinyin":"dazhuang","alias":["大壯"],"dangwei":3,"cuo":"观","zong":"遯","hu":"夬"},{"order":35,"id":40,"name":"晋","glyph":"䷢","binary":"101000","upper":"离","lower":"坤","pinyin":"jin","alias":["晉"],"dangwei":1,"cuo":"需","zong":"明夷","hu":"蹇"},{"order":36,"id":5,"name":"明夷","glyph":"䷣","binary":"000101","upper":"坤","lower":"离","pinyin":"mingyi","alias":[],"dangwei":5,"cuo":"讼","zong":"晋","hu":"解"},{"order":37,"id":53,"name":"家人","glyph":"䷤","binary":"110101","upper":"巽","lower":"离","pinyin":"jiaren","alias":[],"dangwei":5,"cuo":"解","zong":"睽","hu":"未济"},{"order":38,"id":43,"name":"睽","glyph":"䷥","binary":"101011","upper":"离","lower":"兑","pinyin":"kui","alias":["暌"],"dangwei":1,"cuo":"蹇","zong":"家人","hu":"既济"},{"order":39,"id":20,"name":"蹇","glyph":"䷦","binary":"010100","upper":"坎","lower":"艮","pinyin":"jian","alias":[],"dangwei":5,"cuo":"睽","zong":"解","hu":"未济"},{"order":40,"id":10,"name":"解","glyph":"䷧","binary":"001010","upper":"震","lower":"坎","pinyin":"jie","alias":[],"dangwei":1,"cuo":"家人","zong":"蹇","hu":"既济"},{"order":41,"id":35,"name":"损","glyph":"䷨","binary":"100011","upper":"艮","lower":"兑","pinyin":"sun","alias":["損"],"dangwei":2,"cuo":"咸","zong":"益","hu":"复"},{"order":42,"id":49,"name":"益","glyph":"䷩","binary":"110001","upper":"巽","lower":"震","pinyin":"yi3","alias":[],"dangwei":4,"cuo":"恒","zong":"损","hu":"剥"},{"order":43,"id":31,"name":"夬","glyph":"䷪","binary":"011111","upper":"兑","lower":"乾","pinyin":"guai","alias":[],"dangwei":4,"cuo":"剥","zong":"姤","hu":"乾"},{"order":44,"id":62,"name":"姤","glyph":"䷫","binary":"111110","upper":"乾","lower":"巽","pinyin":"gou","alias":[],"dangwei":2,"cuo":"复","zong":"夬","hu":"乾"},{"order":45,"id":24,"name":"萃","glyph":"䷬","binary":"011000","upper":"兑","lower":"坤","pinyin":"cui","alias":[],"dangwei":3,"cuo":"大畜","zong":"升","hu":"渐"},{"order":46,"id":6,"name":"升","glyph":"䷭","binary":"000110","upper":"坤","lower":"巽","pinyin":"sheng","alias":[],"dangwei":3,"cuo":"无妄","zong":"萃","hu":"归妹"},{"order":47,"id":26,"name":"困","glyph":"䷮","binary":"011010","upper":"兑","lower":"坎","pinyin":"kun2","alias":[],"dangwei":2,"cuo":"贲","zong":"井","hu":"家人"},{"order":48,"id":22,"name":"井","glyph":"䷯","binary":"010110","upper":"坎","lower":"巽","pinyin":"jing","alias":[],"dangwei":4,"cuo":"噬嗑","zong":"困","hu":"睽"},{"order":49,"id":29,"name":"革","glyph":"䷰","binary":"011101","upper":"兑","lower":"离","pinyin":"ge","alias":[],"dangwei":5,"cuo":"蒙","zong":"鼎","hu":"姤"},{"order":50,"id":46,"name":"鼎","glyph":"䷱","binary":"101110","upper":"离","lower":"巽","pinyin":"ding","alias":[],"dangwei":1,"cuo":"屯","zong":"革","hu":"夬"},{"order":51,"id":9,"name":"震","glyph":"䷲","binary":"001001","upper":"震","lower":"震","pinyin":"zhen","alias":[],"dangwei":3,"cuo":"巽","zong":"艮","hu":"蹇"},{"order":52,"id":36,"name":"艮","glyph":"䷳","binary":"100100","upper":"艮","lower":"艮","pinyin":"gen","alias":[],"dangwei":3,"cuo":"兑","zong":"震","hu":"解"},{"order":53,"id":52,"name":"渐","glyph":"䷴","binary":"110100","upper":"巽","lower":"艮","pinyin":"jian4","alias":["漸"],"dangwei":4,"cuo":"归妹","zong":"归妹","hu":"未济"},{"order":54,"id":11,"name":"归妹","glyph":"䷵","binary":"001011","upper":"震","lower":"兑","pinyin":"guimei","alias":["歸妹"],"dangwei":2,"cuo":"渐","zong":"渐","hu":"既济"},{"order":55,"id":13,"name":"丰","glyph":"䷶","binary":"001101","upper":"震","lower":"离","pinyin":"feng","alias":["豐"],"dangwei":4,"cuo":"涣","zong":"旅","hu":"大过"},{"order":56,"id":44,"name":"旅","glyph":"䷷","binary":"101100","upper":"离","lower":"艮","pinyin":"lv3","alias":[],"dangwei":2,"cuo":"节","zong":"丰","hu":"大过"},{"order":57,"id":54,"name":"巽","glyph":"䷸","binary":"110110","upper":"巽","lower":"巽","pinyin":"xun","alias":[],"dangwei":3,"cuo":"震","zong":"兑","hu":"睽"},{"order":58,"id":27,"name":"兑","glyph":"䷹","binary":"011011","upper":"兑","lower":"兑","pinyin":"dui","alias":["兌"],"dangwei":3,"cuo":"艮","zong":"巽","hu":"家人"},{"order":59,"id":50,"name":"涣","glyph":"䷺","binary":"110010","upper":"巽","lower":"坎","pinyin":"huan","alias":["渙"],"dangwei":2,"cuo":"丰","zong":"节","hu":"颐"},{"order":60,"id":19,"name":"节","glyph":"䷻","binary":"010011","upper":"坎","lower":"兑","pinyin":"jie2","alias":["節"],"dangwei":4,"cuo":"旅","zong":"涣","hu":"颐"},{"order":61,"id":51,"name":"中孚","glyph":"䷼","binary":"110011","upper":"巽","lower":"兑","pinyin":"zhongfu","alias":[],"dangwei":3,"cuo":"小过","zong":"中孚","hu":"颐"},{"order":62,"id":12,"name":"小过","glyph":"䷽","binary":"001100","upper":"震","lower":"艮","pinyin":"xiaoguo","alias":["小過"],"dangwei":3,"cuo":"中孚","zong":"小过","hu":"大过"},{"order":63,"id":21,"name":"既济","glyph":"䷾","binary":"010101","upper":"坎","lower":"离","pinyin":"jiji","alias":["既濟","旣濟"],"dangwei":6,"cuo":"未济","zong":"未济","hu":"未济"},{"order":64,"id":42,"name":"未济","glyph":"䷿","binary":"101010","upper":"离","lower":"坎","pinyin":"weiji","alias":["未濟"],"dangwei":0,"cuo":"既济","zong":"既济","hu":"既济"}],"stats":{"count":64,"zong_orbits":36,"self_zong":8,"zong_pairs":28}}};
+globalThis.__YAO_CALC_SRC__ = "# 爻 · 算   —— 一台科学计算器的输入状态机\n#\n# 语言不给浮点数、不给变量、不给字符串，这是 SPEC 定下的分工：\n# 爻只拥有「按键序列是否合法、现在处于什么输入模式」，\n# 数值本身交给宿主（浏览器里的 JS）。\n#\n# 6 位状态装不下「相位 + 括号深度」，于是把它劈成两半：\n#\n#   本（低 6 位） = 相位，就是下面 7 个 态\n#   动（高 6 位） = 括号深度 0..63\n#\n#   state = 变(相位, 深度)\n#\n# 这不是凑数：转移只按 `本` 匹配，于是 7×64 种组合只需要 7 组规则，\n# 深度则以位运算的形式在目标里流动（`变(输入, 动(变) + 1)`）。\n# 与 examples/traffic 把秒数塞进高 3 位是同一手法。\n#\n# 7 个相位：\n#   空白  刚清空，什么都没输入\n#   输入  刚输入完一个操作数（数字 / 常数 / 收尾的右括号）\n#   待符  刚输入一个二元运算符，等着右操作数\n#   括号  刚输入左括号，等着括号里的第一个操作数\n#   收括  刚输入右括号，一个带括号的操作数结束了\n#   结果  等号求值完毕\n#   出错  按键序列非法 / 求值失败 / 括号不配平\n#\n# 非法按键的写法就是「不写规则」——解释器返回「此路不通」，\n# 宿主据此拒绝按键并给出提示。校验器会把 4096 个状态全部走一遍。\n\n机 计算器 {\n  # ---------------------------------------------------------------- 事件\n  事 数字                 # 0..9\n  事 小数点               # .\n  事 运算符(位 号)        # 1 +  2 -  3 ×  4 ÷  5 ^  6 %\n  事 左括号               # (\n  事 右括号               # )\n  事 常数(位 号)          # 1 π  2 e  3 Ans\n  事 三角函数(位 号)      # 1 sin 2 cos 3 tan 4 asin 5 acos 6 atan\n  事 对数函数(位 号)      # 1 ln  2 lg  3 log₂ 4 e^x 5 10^x 6 sinh\n  事 幂函数(位 号)        # 1 √   2 ∛   3 x²   4 x³   5 1/x  6 |x|\n  事 阶乘                 # x!\n  事 负号                 # ±\n  事 等号                 # =\n  事 清除                 # C\n  事 出错                 # 宿主发现异常时送进来\n\n  # ---------------------------------------------------------------- 态\n  态 空白 = 0\n  态 输入 = 1\n  态 待符 = 2\n  态 括号 = 3\n  态 收括 = 4\n  态 结果 = 5\n  态 出错 = 6\n\n  # ---------------------------------------------------------------- 清空\n  # 任何相位按 C 都回到空白，深度归零。\n  转 * 清除 -> 变(空白, 0)\n  转 * 出错 -> 变(出错, 0)\n\n  # ---------------------------------------------------------------- 左括号\n  # 除了「出错」，每个相位都能开括号；括号深度加一（63 封顶）。\n  转 * 左括号 -> 若 动(变) < 63 {\n    变(括号, 动(变) + 1)\n  } 否则 {\n    变(出错, 0)\n  }\n\n  # ---------------------------------------------------------------- 数字\n  转 空白 数字 -> 变(输入, 0)\n  转 输入 数字 -> 变(输入, 动(变))\n  转 待符 数字 -> 变(输入, 动(变))\n  转 括号 数字 -> 变(输入, 动(变))\n  转 收括 数字 -> 变(输入, 动(变))   # 隐式乘号由宿主补\n  转 结果 数字 -> 变(输入, 0)        # 从结果开始新表达式\n  转 出错 数字 -> 变(输入, 0)        # 出错后按数字即重来\n\n  # ---------------------------------------------------------------- 小数点\n  转 空白 小数点 -> 变(输入, 0)\n  转 输入 小数点 -> 变(输入, 动(变))\n  转 待符 小数点 -> 变(输入, 动(变))\n  转 括号 小数点 -> 变(输入, 动(变))\n  转 收括 小数点 -> 变(输入, 动(变))\n  转 结果 小数点 -> 变(输入, 0)\n  转 出错 小数点 -> 变(输入, 0)\n\n  # ---------------------------------------------------------------- 二元运算符\n  # 空白 / 括号 后面不能直接接运算符（负号请用 ± 键）。\n  转 输入 运算符 -> 变(待符, 动(变))\n  转 待符 运算符 -> 变(待符, 动(变))  # 连按运算符 = 换掉上一个\n  转 收括 运算符 -> 变(待符, 动(变))\n  转 结果 运算符 -> 变(待符, 0)      # 拿上一次的结果接着算\n\n  # ---------------------------------------------------------------- 右括号\n  # 深度为 0 时按 ) 是错，机器直接把状态推到出错。\n  转 输入 右括号 -> 若 动(变) > 0 {\n    变(收括, 动(变) - 1)\n  } 否则 {\n    变(出错, 0)\n  }\n  转 收括 右括号 -> 若 动(变) > 0 {\n    变(收括, 动(变) - 1)\n  } 否则 {\n    变(出错, 0)\n  }\n\n  # ---------------------------------------------------------------- 常数\n  转 空白 常数 -> 变(输入, 0)\n  转 输入 常数 -> 变(输入, 动(变))\n  转 待符 常数 -> 变(输入, 动(变))\n  转 括号 常数 -> 变(输入, 动(变))\n  转 收括 常数 -> 变(输入, 动(变))\n  转 结果 常数 -> 变(输入, 0)\n\n  # ---------------------------------------------------------------- 一元函数\n  # 函数作用在紧邻的操作数上（sin 在 30 之后按），相位不变。\n  转 输入 三角函数 -> 变(输入, 动(变))\n  转 收括 三角函数 -> 变(收括, 动(变))\n  转 结果 三角函数 -> 变(结果, 0)\n\n  转 输入 对数函数 -> 变(输入, 动(变))\n  转 收括 对数函数 -> 变(收括, 动(变))\n  转 结果 对数函数 -> 变(结果, 0)\n\n  转 输入 幂函数 -> 变(输入, 动(变))\n  转 收括 幂函数 -> 变(收括, 动(变))\n  转 结果 幂函数 -> 变(结果, 0)\n\n  转 输入 阶乘 -> 变(输入, 动(变))\n  转 收括 阶乘 -> 变(收括, 动(变))\n  转 结果 阶乘 -> 变(结果, 0)\n\n  转 输入 负号 -> 变(输入, 动(变))\n  转 收括 负号 -> 变(收括, 动(变))\n  转 结果 负号 -> 变(结果, 0)\n\n  # ---------------------------------------------------------------- 等号\n  # 括号没闭合时宿主会先补发若干个 右括号，再发 等号。\n  转 输入 等号 -> 变(结果, 0)\n  转 收括 等号 -> 变(结果, 0)\n  转 结果 等号 -> 变(结果, 0)        # 连按 = 不报错，也不重复计算\n\n  起 空白\n}\n";
+
+/* ───────── yao/src/core.js ───────── */
+/**
+ * 爻 · 核心值类型与位运算
+ *
+ * 位布局（SPEC.md §2，全语言的宪法）：
+ *   bit0 = 初爻（最下） … bit5 = 上爻（最上）
+ *   卦 = 6 位；下卦 = bits0..2，上卦 = bits3..5
+ *   变 = 12 位：低 6 位 本，高 6 位 动；之 = 本 ^ 动
+ *
+ * 本模块零依赖（除读取 data/hexagrams.json），可单独移植到任何语言。
+ */
+
+
+
+// ---------------------------------------------------------------- 常量
+
+const GUA_MASK = 0x3f;   // 6 位
+const BIAN_MASK = 0xfff; // 12 位
+
+/** 爻名，索引 1..6（下标 0 占位） */
+const POS_NAMES = [null, '初', '二', '三', '四', '五', '上'];
+
+/** 四象：6 老阴 / 7 少阳 / 8 少阴 / 9 老阳 */
+const SI_XIANG = {
+  6: { name: '老阴', yang: false, moving: true, mark: '×' },
+  7: { name: '少阳', yang: true, moving: false, mark: '' },
+  8: { name: '少阴', yang: false, moving: false, mark: '' },
+  9: { name: '老阳', yang: true, moving: true, mark: '○' },
+};
+
+// ---------------------------------------------------------------- 位运算
+
+/** 本卦：变的低 6 位 */
+const ben = (x) => x & GUA_MASK;
+
+/** 动爻掩码：变的高 6 位 */
+const dong = (x) => (x >> 6) & GUA_MASK;
+
+/** 之卦 = 本 ^ 动。恒等式：本 ^ 动 ^ 之 = 0 */
+const zhi = (x) => ben(x) ^ dong(x);
+
+/** 由 (本, 动) 构造变，强制不变式 */
+const bian = (b, d) => ((d & GUA_MASK) << 6) | (b & GUA_MASK);
+
+/** 静：丢弃动爻，把变投影为卦（可能触发 Y0102 警告） */
+const jing = (x) => ben(x);
+
+/** 错：六爻全变 */
+const cuo = (x) => (x & GUA_MASK) ^ GUA_MASK;
+
+/** 综：爻序倒转（bit0 <-> bit5） */
+function zong(x) {
+  const v = x & GUA_MASK;
+  return (
+    ((v & 0b000001) << 5) |
+    ((v & 0b000010) << 3) |
+    ((v & 0b000100) << 1) |
+    ((v & 0b001000) >> 1) |
+    ((v & 0b010000) >> 3) |
+    ((v & 0b100000) >> 5)
+  );
+}
+
+/** 互：下互取 2/3/4 爻，上互取 3/4/5 爻 */
+const hu = (x) => {
+  const v = x & GUA_MASK;
+  return ((v >> 1) & 0b111) | (((v >> 2) & 0b111) << 3);
+};
+
+/** popcount，用于 变数 */
+function popcount(v) {
+  let n = 0;
+  let x = v & GUA_MASK;
+  while (x) {
+    x &= x - 1;
+    n++;
+  }
+  return n;
+}
+
+/** 变数：动爻个数 0..6 */
+const bianShu = (x) => popcount(dong(x));
+
+/** 当位爻数：奇数位宜阳，偶数位宜阴 */
+function dangWei(x) {
+  let n = 0;
+  const v = x & GUA_MASK;
+  for (let p = 1; p <= 6; p++) {
+    const want = p % 2 === 1 ? 1 : 0;
+    if (((v >> (p - 1)) & 1) === want) n++;
+  }
+  return n;
+}
+
+/**
+ * 取第 pos 爻的四象记数（1..6，自初爻起）。
+ * @returns {6|7|8|9}
+ */
+function yaoOf(x, pos) {
+  if (!Number.isInteger(pos) || pos < 1 || pos > 6) {
+    throw new RangeError(`爻位必须在 1..6，收到 ${pos}`);
+  }
+  const yang = (ben(x) >> (pos - 1)) & 1;
+  const moving = (dong(x) >> (pos - 1)) & 1;
+  if (yang) return moving ? 9 : 7;
+  return moving ? 6 : 8;
+}
+
+// ---------------------------------------------------------------- 爻串
+
+/**
+ * 由爻串构造变。规范形式：6 个字符，自初爻至上爻，取值 6/7/8/9。
+ * @param {string} s
+ * @returns {number} 12 位变
+ */
+function fromDigits(s) {
+  if (typeof s !== 'string' || !/^[6-9]{6}$/.test(s)) {
+    throw new SyntaxError(`非法爻串 "${s}"：必须是 6 个 6/7/8/9 字符（Y0001）`);
+  }
+  let b = 0;
+  let d = 0;
+  for (let i = 0; i < 6; i++) {
+    const yang = s[i] === '7' || s[i] === '9';
+    const moving = s[i] === '6' || s[i] === '9';
+    if (yang) b |= 1 << i;
+    if (moving) d |= 1 << i;
+  }
+  return bian(b, d);
+}
+
+/** 变 -> 爻串（规范形式，可 round-trip） */
+function toDigits(x) {
+  let s = '';
+  for (let p = 1; p <= 6; p++) s += String(yaoOf(x, p));
+  return s;
+}
+
+// ---------------------------------------------------------------- 卦表
+
+const DATA_URL = 'data/hexagrams.json';
+
+let DATA;
+try {
+  DATA = globalThis.__YAO_DATA__.hexagrams;
+} catch (err) {
+  throw new Error(
+    `无法读取 ${DATA_URL.pathname}。请先运行 python tools/gen_hexagrams.py 生成卦表。\n${err.message}`
+  );
+}
+
+/** 64 条元数据，按文王序 */
+const HEXAGRAMS = DATA.hexagrams;
+
+/** id (0..63) -> 元数据 */
+const BY_ID = new Array(64);
+/** 规范名 -> 元数据 */
+const BY_NAME = new Map();
+
+for (const h of HEXAGRAMS) {
+  BY_ID[h.id] = h;
+  BY_NAME.set(h.name, h);
+}
+
+/** 别名 -> 规范名 */
+const ALIASES = new Map();
+for (const h of HEXAGRAMS) {
+  for (const a of h.alias || []) ALIASES.set(a, h.name);
+}
+
+/** 词法器用的最长匹配表：所有可接受的卦名写法，按长度降序 */
+const NAME_TOKENS = [
+  ...new Set([...BY_NAME.keys(), ...ALIASES.keys()]),
+].sort((a, b) => b.length - a.length || (a < b ? -1 : 1));
+
+/** 卦象字符 (U+4DC0..U+4DFF) -> id */
+const GLYPH_TO_ID = new Map();
+for (const h of HEXAGRAMS) GLYPH_TO_ID.set(h.glyph, h.id);
+
+/** 取规范名 */
+function nameOf(x) {
+  return BY_ID[ben(x)].name;
+}
+
+/** 取卦象字符 */
+function glyphOf(x) {
+  return BY_ID[ben(x)].glyph;
+}
+
+/** 取元数据 */
+function meta(x) {
+  return BY_ID[ben(x)];
+}
+
+/**
+ * 序：先天返回 0..63（即卦值本身），文王返回 1..64。
+ * @param {number} x 变或卦
+ * @param {'先天'|'文王'} method
+ */
+function xu(x, method = '先天') {
+  if (method === '先天') return ben(x);
+  if (method === '文王') return BY_ID[ben(x)].order;
+  throw new RangeError(`未知序法 "${method}"，只支持 先天 / 文王`);
+}
+
+// ---------------------------------------------------------------- 渲染
+
+const ART = {
+  unicode: { yang: '▅▅▅▅▅', yin: '▅▅ ▅▅' },
+  ascii: { yang: '=====', yin: '== ==' },
+};
+
+/**
+ * 渲染六爻图，自上（上爻）而下（初爻）。
+ * @param {number} x 变
+ * @param {{ascii?: boolean, labels?: boolean}} [opts]
+ * @returns {string[]}
+ */
+function renderLines(x, opts = {}) {
+  const { ascii = false, labels = true } = opts;
+  const art = ascii ? ART.ascii : ART.unicode;
+  const out = [];
+  for (let p = 6; p >= 1; p--) {
+    const y = yaoOf(x, p);
+    const sx = SI_XIANG[y];
+    const bar = sx.yang ? art.yang : art.yin;
+    const mark = sx.moving ? ' ' + sx.mark : '';
+    out.push(labels ? `${POS_NAMES[p]} ${bar}${mark}` : `${bar}${mark}`);
+  }
+  return out;
+}
+
+/** 一行摘要：名 卦象 变数 本/动/之 */
+function summary(x, opts = {}) {
+  const a = nameOf(x);
+  const b = nameOf(zhi(x));
+  const n = bianShu(x);
+  const rel = n === 0 ? `静卦` : `${n} 爻动`;
+  return `${a} → ${b}　${rel}　[${toDigits(x)}]`;
+}
+
+
+/* ───────── yao/src/evalast.js ───────── */
+/**
+ * 爻 · 表达式 AST 求值（编译期常量与运行期共用）
+ *
+ * 值域：所有 6 位值在运算中一律 & 0x3F；`变(a, b)` 是唯一产生 12 位值的构造。
+ */
+
+
+
+class EvalAstError extends Error {
+  constructor(msg, code = 'Y0910') {
+    super(msg);
+    this.name = 'EvalAstError';
+    this.code = code;
+  }
+}
+
+const M = 0x3f;
+
+const SIX = (v) => ((v | 0) & M);
+
+/**
+ * @param {object} ast
+ * @param {{ben?: number, params?: Record<string, number>}} env
+ * @returns {number}
+ */
+function evalAst(ast, env = {}) {
+  switch (ast.t) {
+    case 'lit':
+      return ast.kind === 'bian' ? ast.v : SIX(ast.v);
+
+    case 'ben':
+      if (env.ben === undefined) throw new EvalAstError('`本` 只能出现在转移目标里');
+      return SIX(env.ben);
+
+    case 'state':
+      if (env.state === undefined) throw new EvalAstError('`变` 只能出现在转移目标里');
+      return env.state;
+
+    case 'var': {
+      const v = env.params?.[ast.name] ?? env.consts?.[ast.name];
+      if (v === undefined) throw new EvalAstError(`未定义的名字 "${ast.name}"（Y0014）`);
+      // 不做掩码：态名可能是一个带动爻的 变，裸返回才能保住 12 位
+      return v;
+    }
+
+    case 'un': {
+      const x = SIX(evalAst(ast.x, env));
+      return ast.op === '~' ? ~x & M : -x & M;
+    }
+
+    case 'bin': {
+      const a = SIX(evalAst(ast.l, env));
+      const b = SIX(evalAst(ast.r, env));
+      switch (ast.op) {
+        case '+': return (a + b) & M;
+        case '-': return (a - b) & M;
+        case '*': return (a * b) & M;
+        case '&': return a & b;
+        case '|': return a | b;
+        case '^': return a ^ b;
+        case '<<': return (a << b) & M;
+        case '>>': return (a >> b) & M;
+        // 比较：结果为 1 / 0，不参与 6 位算术
+        case '==': return a === b ? 1 : 0;
+        case '!=': return a !== b ? 1 : 0;
+        case '<': return a < b ? 1 : 0;
+        case '>': return a > b ? 1 : 0;
+        case '<=': return a <= b ? 1 : 0;
+        case '>=': return a >= b ? 1 : 0;
+        default: throw new EvalAstError(`未知运算符 "${ast.op}"`);
+      }
+    }
+
+    case 'if': {
+      const c = SIX(evalAst(ast.cond, env));
+      return evalAst(c !== 0 ? ast.then : ast.otherwise, env);
+    }
+
+    case 'block': {
+      // 观察性效应：只把值交给 sink，绝不回流到目标表达式
+      for (const eff of ast.effects) {
+        const v = evalAst(eff, env);
+        if (typeof env.sink === 'function') env.sink(SIX(v));
+      }
+      return evalAst(ast.target, env);
+    }
+
+    case 'match': {
+      const v = SIX(evalAst(ast.subject, env));
+      for (const arm of ast.arms) {
+        if (arm.pattern !== null && arm.pattern === v) return evalAst(arm.body, env);
+      }
+      for (const arm of ast.arms) {
+        if (arm.pattern === null) return evalAst(arm.body, env);
+      }
+      throw new EvalAstError(`合 没有匹配的分支（值为 ${v}）（Y0201）`, 'Y0201');
+    }
+
+    case 'call': {
+      const args = ast.args.map((a) => evalAst(a, env));
+      return callBuiltin(ast.name, args, ast.tok);
+    }
+
+    default:
+      throw new EvalAstError(`未知表达式节点 "${ast.t}"`);
+  }
+}
+
+const ARITY = {
+  变: 2, 静: 1, 错: 1, 综: 1, 互: 1, 变数: 1, 当位: 1, 卦: 1, 数: 1, 爻: 2,
+  本: 1, 动: 1, 之: 1,
+};
+
+function callBuiltin(name, args, tok) {
+  const want = ARITY[name];
+  if (want === undefined) {
+    throw new EvalAstError(`未知函数 "${name}"（第 ${tok?.line ?? '?'} 行）`, 'Y0014');
+  }
+  if (args.length !== want) {
+    throw new EvalAstError(`${name} 需要 ${want} 个参数，收到 ${args.length} 个`);
+  }
+
+  switch (name) {
+    case '变': return SIX(args[0]) | (SIX(args[1]) << 6);
+    case '静': return SIX(args[0]);
+    case '错': return cuo(SIX(args[0]));
+    case '综': return zong(SIX(args[0]));
+    case '互': return hu(SIX(args[0]));
+    case '变数': return bianShu(args[0]);
+    case '当位': return dangWei(SIX(args[0]));
+    case '卦': return SIX(args[0]);
+    case '数': return SIX(args[0]);
+    case '本': return ben(args[0]);
+    case '动': return dong(args[0]);
+    case '之': return zhi(args[0]);
+    case '爻': {
+      const p = SIX(args[1]);
+      if (p < 1 || p > 6) throw new EvalAstError(`爻位必须是 1..6，得到 ${p}`);
+      const yang = (ben(args[0]) >> (p - 1)) & 1;
+      const moving = (dong(args[0]) >> (p - 1)) & 1;
+      return yang ? (moving ? 9 : 7) : moving ? 6 : 8;
+    }
+    default:
+      throw new EvalAstError(`未实现的函数 "${name}"`);
+  }
+}
+
+
+
+
+/* ───────── yao/src/lex.js ───────── */
+/**
+ * 爻 · 词法器
+ *
+ * 见 SPEC.md §3。要点：
+ *   - 爻串（6 个 6/7/8/9）无前缀即字面量，因为本语言 数 只有 0..63
+ *   - 卦名与卦象字符（U+4DC0..U+4DFF）等价
+ *   - 动爻后缀 `/` 必须紧跟卦字面量，中间不能有空白
+ *   - 卦名占 64 个保留字；`否` 因此让位，else 关键字取 `否则`
+ */
+
+
+
+/** 关键字。注意：`否则` 而非 `否`，因为 `否` 是第 12 卦。 */
+const KEYWORDS = new Set([
+  // 类型
+  '变', '卦', '爻', '数', '位',
+  // 声明与结构
+  '机', '态', '转', '事', '起', '组', '印',
+  // 控制
+  '若', '则', '否则', '合',
+  // 运算与内建
+  '本', '动', '之', '静', '错', '综', '互', '变数', '当位', '序',
+  '先天', '文王', '止',
+]);
+
+const PUNCT = [
+  '<<', '>>', '<=', '>=', '==', '!=',
+  '->', '=>', '<', '>',
+  '(', ')', '{', '}', ',', ';', ':', '=', '.', '+', '-', '*', '/', '&', '|', '^', '~',
+];
+
+const ID_START = /[A-Za-z_\u4e00-\u9fff]/;
+const ID_CONT = /[A-Za-z0-9_\u4e00-\u9fff]/;
+
+class LexError extends Error {
+  constructor(msg, pos, line, col, code = 'Y0001') {
+    super(`${msg}（第 ${line} 行第 ${col} 列）`);
+    this.name = 'LexError';
+    this.code = code;
+    this.pos = pos;
+    this.line = line;
+    this.col = col;
+  }
+}
+
+/**
+ * @param {string} src
+ * @returns {{type:string, value:any, text:string, pos:number, line:number, col:number}[]}
+ */
+function lex(src) {
+  const toks = [];
+  let i = 0;
+  let line = 1;
+  let lineStart = 0;
+
+  const col = () => i - lineStart + 1;
+  const push = (type, value, start, text) =>
+    toks.push({ type, value, text, pos: start, line, col: start - lineStart + 1 });
+
+  while (i < src.length) {
+    const ch = src[i];
+
+    // --- 空白（含全角空格）
+    if (ch === '\n') { i++; line++; lineStart = i; continue; }
+    if (/\s/.test(ch) || ch === '\u3000') { i++; continue; }
+
+    // --- 注释
+    if (ch === '#') {
+      if (src.startsWith('#[', i)) {
+        // 块注释，可嵌套
+        const startLine = line;
+        const startCol = col();
+        let depth = 0;
+        while (i < src.length) {
+          if (src.startsWith('#[', i)) { depth++; i += 2; continue; }
+          if (src.startsWith(']#', i)) {
+            depth--; i += 2;
+            if (depth === 0) break;
+            continue;
+          }
+          if (src[i] === '\n') { line++; i++; lineStart = i; continue; }
+          i++;
+        }
+        if (depth !== 0) {
+          throw new LexError('块注释未闭合', i, startLine, startCol);
+        }
+        continue;
+      }
+      while (i < src.length && src[i] !== '\n') i++;
+      continue;
+    }
+
+    const start = i;
+
+    // --- 宿主效应 @名
+    if (ch === '@') {
+      i++;
+      const rest = src.slice(i);
+      const name = matchName(rest) ?? matchIdent(rest) ?? matchGlyph(rest);
+      if (!name) throw new LexError('`@` 之后必须是卦名、卦象字符或标识符', start, line, col());
+      i += name.text.length;
+      push('effect', name.text, start, '@' + name.text);
+      continue;
+    }
+
+    // --- 数字串 / 数
+    if (ch >= '0' && ch <= '9') {
+      if (src.startsWith('0b', i) || src.startsWith('0B', i)) {
+        i += 2;
+        const bs = i;
+        while (i < src.length && (src[i] === '0' || src[i] === '1')) i++;
+        if (i === bs) throw new LexError('`0b` 之后缺少二进制位', start, line, col());
+        const text = src.slice(start, i);
+        push('num', parseInt(src.slice(bs, i), 2), start, text);
+        continue;
+      }
+      while (i < src.length && src[i] >= '0' && src[i] <= '9') i++;
+      const text = src.slice(start, i);
+      // 爻串：恰好 6 位且全在 6..9（本语言 数 最大 63，故无歧义）
+      if (/^[6-9]{6}$/.test(text)) {
+        push('bian', fromDigits(text), start, text);
+      } else {
+        const v = Number(text);
+        if (v > 63) {
+          throw new LexError(`数 字面量越界（${text} > 63）`, start, line, col(), 'Y0003');
+        }
+        push('num', v, start, text);
+      }
+      continue;
+    }
+
+    // --- 卦象字符
+    {
+      const g = matchGlyph(src.slice(i));
+      if (g) {
+        i += g.text.length;
+        const id = GLYPH_TO_ID.get(g.text);
+        if (id === undefined) {
+          throw new LexError(`未知卦象字符 ${g.text}`, start, line, col(), 'Y0002');
+        }
+        const suffix = readSuffix(src, i);
+        if (suffix) i = suffix.end;
+        push('bian', bian(id, suffix ? suffix.mask : 0), start, src.slice(start, i));
+        continue;
+      }
+    }
+
+    // --- 卦名（最长匹配，且其后不能紧跟标识符字符）
+    {
+      const n = matchName(src.slice(i));
+      if (n) {
+        const after = src[i + n.text.length] ?? '';
+        if (!(after && ID_CONT.test(after))) {
+          i += n.text.length;
+          const canon = BY_NAME.has(n.text) ? n.text : ALIASES.get(n.text);
+          const id = BY_NAME.get(canon).id;
+          const suffix = readSuffix(src, i);
+          if (suffix) i = suffix.end;
+          push('bian', bian(id, suffix ? suffix.mask : 0), start, src.slice(start, i));
+          continue;
+        }
+      }
+    }
+
+    // --- 标识符与关键字
+    if (ID_START.test(ch)) {
+      const id = matchIdent(src.slice(i));
+      i += id.length;
+      if (KEYWORDS.has(id)) push('kw', id, start, id);
+      else push('ident', id, start, id);
+      continue;
+    }
+
+    // --- 符号
+    {
+      const p = PUNCT.find((s) => src.startsWith(s, i));
+      if (p) {
+        i += p.length;
+        push('punct', p, start, p);
+        continue;
+      }
+    }
+
+    throw new LexError(`无法识别的字符 ${JSON.stringify(ch)}`, start, line, col());
+  }
+
+  toks.push({ type: 'eof', value: null, text: '', pos: i, line, col: col() });
+  return toks;
+}
+
+// ---------------------------------------------------------------- 辅助
+
+function matchGlyph(s) {
+  const c = s[0];
+  if (!c) return null;
+  const cp = c.codePointAt(0);
+  if (cp >= 0x4dc0 && cp <= 0x4dff) return { text: c };
+  return null;
+}
+
+function matchName(s) {
+  for (const n of NAME_TOKENS) {
+    if (s.startsWith(n)) return { text: n };
+  }
+  return null;
+}
+
+function matchIdent(s) {
+  if (!s || !ID_START.test(s[0])) return null;
+  let i = 1;
+  while (i < s.length && ID_CONT.test(s[i])) i++;
+  return s.slice(0, i);
+}
+
+/**
+ * 读动爻后缀：`/` 紧跟（无空白）之后，接 6 位 0/1，或爻名串（初/二/三/四/五/上）。
+ * @returns {{mask:number, end:number}|null}
+ */
+function readSuffix(src, i) {
+  if (src[i] !== '/') return null;
+  let j = i + 1;
+  const rest = src.slice(j);
+
+  const bits = /^[01]{6}/.exec(rest);
+  if (bits) {
+    return { mask: parseInt(bits[0], 2), end: j + 6 };
+  }
+
+  let mask = 0;
+  let n = 0;
+  for (;;) {
+    const c = src[j];
+    if (!c) break;
+    const p = POS_NAMES.indexOf(c); // 1..6
+    if (p <= 0) break;
+    mask |= 1 << (p - 1);
+    j++;
+    n++;
+    if (n > 6) break;
+  }
+  if (n === 0) return null;
+  return { mask, end: j };
+}
+
+
+/* ───────── yao/src/parse.js ───────── */
+/**
+ * 爻 · 语法分析（M2）
+ *
+ * 文法（M2 子集）：
+ *   程序   := '机' 名 '{' 项* '起' 名 '}'
+ *   项     := '事' 名 [ '(' '位' 名 ')' ]
+ *           | '态' 名 '=' 表达式
+ *           | '转' (名 | '*') 事件 '->' 表达式
+ *
+ * 名字位置（态名、转的源、起）允许直接写卦名，如 `态 未济 = 未济`。
+ * 卦名在其它位置仍是字面量。
+ */
+
+
+
+
+class ParseError extends Error {
+  constructor(msg, tok, code = 'Y0010') {
+    const where = tok ? `（第 ${tok.line} 行第 ${tok.col} 列）` : '';
+    super(msg + where);
+    this.name = 'ParseError';
+    this.code = code;
+  }
+}
+
+const BIN_LEVELS = [
+  ['==', '!=', '<=', '>=', '<', '>'],
+  ['|'],
+  ['^'],
+  ['&'],
+  ['<<', '>>'],
+  ['+', '-'],
+  ['*'],
+];
+
+class Parser {
+  constructor(toks) {
+    this.toks = toks;
+    this.i = 0;
+  }
+
+  peek(k = 0) { return this.toks[this.i + k]; }
+  next() { return this.toks[this.i++]; }
+  at(type, value) {
+    const t = this.peek();
+    return t.type === type && (value === undefined || t.value === value);
+  }
+  eat(type, value) {
+    if (this.at(type, value)) return this.next();
+    return null;
+  }
+  expect(type, value, what) {
+    const t = this.peek();
+    if (t.type === type && (value === undefined || t.value === value)) return this.next();
+    throw new ParseError(`期望 ${what ?? value ?? type}，得到 "${t.text || t.type}"`, t);
+  }
+
+  /** 名字位置：ident 或卦名字面量；`组` 里可用 `组件.成员` */
+  parseName(what) {
+    const first = this.parseSimpleName(what);
+    if (this.at('punct', '.')) {
+      this.i++;
+      const second = this.parseSimpleName(`${what}的成员`);
+      return `${first}.${second}`;
+    }
+    return first;
+  }
+
+  parseSimpleName(what) {
+    const t = this.peek();
+    if (t.type === 'ident') { this.i++; return t.value; }
+    if (t.type === 'bian') {
+      if (dongOf(t.value) !== 0) {
+        throw new ParseError(`${what}不能用带爻变的卦，只能写静卦`, t);
+      }
+      this.i++;
+      return nameOf(t.value);
+    }
+    throw new ParseError(`期望${what}，得到 "${t.text || t.type}"`, t);
+  }
+
+  // -------------------------------------------------------------- 程序
+
+  parseProgram() {
+    this.expect('kw', '机', '`机`');
+    const machineName = this.parseName('机器名');
+    this.expect('punct', '{');
+
+    const events = [];
+    const states = [];
+    const groups = [];
+    const rules = [];
+
+    while (!this.at('kw', '起')) {
+      if (this.at('eof')) throw new ParseError('机器定义没有闭合：缺少 `起`', this.peek());
+      if (this.at('kw', '事')) { events.push(this.parseEvent()); continue; }
+      if (this.at('kw', '态')) { states.push(this.parseState()); continue; }
+      if (this.at('kw', '组')) { groups.push(this.parseGroup()); continue; }
+      if (this.at('kw', '转')) { rules.push(this.parseRule()); continue; }
+      const t = this.peek();
+      if (t.type === 'punct' && t.value === '}') {
+        throw new ParseError('机器定义缺少 `起`', t);
+      }
+      throw new ParseError(`机器内不能出现 "${t.text || t.type}"`, t);
+    }
+
+    this.expect('kw', '起');
+    const starts = [this.parseName('起始态')];
+    // 组 机器要给每个组件一个起点，用逗号或空格分隔
+    while (this.at('punct', ',') || this.at('ident') || this.at('bian')) {
+      this.eat('punct', ',');
+      starts.push(this.parseName('起始态'));
+    }
+    this.expect('punct', '}');
+    this.expect('eof', undefined, '文件结束');
+
+    return { type: 'machine', name: machineName, events, states, groups, rules, starts };
+  }
+
+  /** 组 名 { 成员 = 表达式 ... } */
+  parseGroup() {
+    const tok = this.expect('kw', '组');
+    const name = this.parseSimpleName('组名');
+    this.expect('punct', '{');
+
+    const members = [];
+    while (!this.at('punct', '}')) {
+      if (this.at('eof')) throw new ParseError(`组 "${name}" 没有闭合`, this.peek());
+      const mTok = this.peek();
+      const member = this.parseSimpleName('成员名');
+      this.expect('punct', '=');
+      members.push({ name: member, value: this.parseExpr(), tok: mTok });
+    }
+    this.expect('punct', '}');
+    if (!members.length) throw new ParseError(`组 "${name}" 至少要有一个成员`, tok);
+    return { name, members, tok };
+  }
+
+  parseEvent() {
+    const tok = this.expect('kw', '事');
+    const name = this.parseName('事件名');
+    let param = null;
+    if (this.eat('punct', '(')) {
+      this.expect('kw', '位', '参数类型 `位`');
+      param = this.parseName('参数名');
+      this.expect('punct', ')');
+    }
+    return { name, param, tok };
+  }
+
+  parseState() {
+    const tok = this.expect('kw', '态');
+    const name = this.parseName('态名');
+    this.expect('punct', '=');
+    const value = this.parseExpr();
+    return { name, value, tok };
+  }
+
+  parseRule() {
+    const tok = this.expect('kw', '转');
+    let from = null;
+    if (this.eat('punct', '*')) {
+      from = null;
+    } else {
+      from = this.parseName('源态');
+    }
+    const event = this.parseName('事件名');
+    this.expect('punct', '->');
+    const target = this.at('punct', '{') ? this.parseBlock() : this.parseExpr();
+    return { from, event, target, tok };
+  }
+
+  /**
+   * 转移块：`{ 印 e ; 印 e ; 目标 }`
+   *
+   * 印 只能出现在语句位置且必须以分号结尾，因此它**不可能**产出一个值去影响目标。
+   * 这是「观察性效应」的语法级保证，不靠约定。
+   */
+  parseBlock() {
+    const tok = this.expect('punct', '{');
+    const effects = [];
+
+    while (this.at('kw', '印')) {
+      this.i++;
+      effects.push(this.parseExpr());
+      this.expect('punct', ';', '`印` 之后的分号');
+    }
+
+    const target = this.parseExpr();
+    this.expect('punct', '}');
+    return { t: 'block', effects, target, tok };
+  }
+
+  // -------------------------------------------------------------- 表达式
+
+  parseExpr() { return this.parseLevel(0); }
+
+  parseLevel(level) {
+    if (level >= BIN_LEVELS.length) return this.parseUnary();
+    let left = this.parseLevel(level + 1);
+    for (;;) {
+      const t = this.peek();
+      if (t.type !== 'punct' || !BIN_LEVELS[level].includes(t.value)) break;
+      this.i++;
+      const right = this.parseLevel(level + 1);
+      left = { t: 'bin', op: t.value, l: left, r: right, tok: t };
+    }
+    return left;
+  }
+
+  parseUnary() {
+    const t = this.peek();
+    if (t.type === 'punct' && t.value === '~') {
+      this.i++;
+      return { t: 'un', op: '~', x: this.parseUnary(), tok: t };
+    }
+    if (t.type === 'punct' && t.value === '-') {
+      this.i++;
+      return { t: 'un', op: '负', x: this.parseUnary(), tok: t };
+    }
+    return this.parsePrimary();
+  }
+
+  parsePrimary() {
+    const t = this.peek();
+
+    if (t.type === 'bian') { this.i++; return { t: 'lit', kind: 'bian', v: t.value, tok: t }; }
+    if (t.type === 'num') { this.i++; return { t: 'lit', kind: 'num', v: t.value, tok: t }; }
+
+    if (t.type === 'punct' && t.value === '(') {
+      this.i++;
+      const e = this.parseExpr();
+      this.expect('punct', ')');
+      return e;
+    }
+
+    // 裸 `本` = 当前状态的卦体；裸 `变` = 当前状态的整个 12 位变
+    if (t.type === 'kw' && t.value === '本' && !(this.peek(1).type === 'punct' && this.peek(1).value === '(')) {
+      this.i++;
+      return { t: 'ben', tok: t };
+    }
+    if (t.type === 'kw' && t.value === '变' && !(this.peek(1).type === 'punct' && this.peek(1).value === '(')) {
+      this.i++;
+      return { t: 'state', tok: t };
+    }
+
+    // 若 条件 { 甲 } 否则 { 乙 } —— 条件非零为真
+    if (t.type === 'kw' && t.value === '若') {
+      this.i++;
+      const cond = this.parseExpr();
+      this.expect('punct', '{');
+      const then = this.parseExpr();
+      this.expect('punct', '}');
+      this.expect('kw', '否则', '`否则`');
+      this.expect('punct', '{');
+      const otherwise = this.parseExpr();
+      this.expect('punct', '}');
+      return { t: 'if', cond, then, otherwise, tok: t };
+    }
+
+    // 合：按值分发
+    if (t.type === 'kw' && t.value === '合') {
+      this.i++;
+      const subject = this.parseExpr();
+      this.expect('punct', '{');
+      const arms = [];
+      while (!this.at('punct', '}')) {
+        let pattern;
+        const p = this.peek();
+        if (p.type === 'num') {
+          this.i++;
+          pattern = p.value;
+        } else if (p.type === 'ident' && p.value === '_') {
+          this.i++;
+          pattern = null;
+        } else {
+          throw new ParseError(`合 的分支必须以数字或 _ 开头，得到 "${p.text || p.type}"`, p);
+        }
+        this.expect('punct', '=>');
+        const body = this.parseExpr();
+        arms.push({ pattern, body, tok: p });
+        if (this.eat('punct', ',') || this.eat('punct', ';')) continue;
+        if (this.at('punct', '}')) break;
+        throw new ParseError('合 的分支之间需要逗号或分号', this.peek());
+      }
+      this.expect('punct', '}');
+      if (!arms.length) throw new ParseError('合 至少要有一个分支', t);
+      return { t: 'match', subject, arms, tok: t };
+    }
+
+    const callable =
+      (t.type === 'kw' || t.type === 'ident') &&
+      this.peek(1).type === 'punct' && this.peek(1).value === '(';
+
+    if (callable) {
+      this.i++;
+      this.expect('punct', '(');
+      const args = [];
+      if (!(this.peek().type === 'punct' && this.peek().value === ')')) {
+        for (;;) {
+          args.push(this.parseExpr());
+          if (this.eat('punct', ',')) continue;
+          break;
+        }
+      }
+      this.expect('punct', ')');
+      return { t: 'call', name: t.value, args, tok: t };
+    }
+
+    if (t.type === 'ident') {
+      this.i++;
+      // 组 的成员引用：组件.成员
+      if (this.at('punct', '.')) {
+        this.i++;
+        const member = this.parseSimpleName('成员名');
+        return { t: 'var', name: `${t.value}.${member}`, tok: t };
+      }
+      return { t: 'var', name: t.value, tok: t };
+    }
+
+    throw new ParseError(`无法解析表达式：得到 "${t.text || t.type}"`, t);
+  }
+}
+
+/** @param {string} src */
+function parse(src) {
+  const toks = lex(src);
+  return new Parser(toks).parseProgram();
+}
+
+
+/* ───────── yao/src/ir.js ───────── */
+/**
+ * 爻 · 机器 IR 构建与静态检查
+ *
+ * 产出物是一个纯数据对象，解释器与 C 后端都只读它。
+ * 本层负责 M2 能查出来的全部错误：重名、重卦、未声明的事件/态、非确定转移。
+ */
+
+
+
+
+class IrError extends Error {
+  constructor(msg, code = 'Y0200') {
+    super(msg);
+    this.name = 'IrError';
+    this.code = code;
+  }
+}
+
+/**
+ * @param {object} ast parse() 的结果
+ */
+function buildIr(ast) {
+  if ((ast.groups ?? []).length) return buildGroupedIr(ast);
+
+  // ---- 事件
+  const events = new Map();
+  for (const e of ast.events) {
+    if (events.has(e.name)) throw new IrError(`事件 "${e.name}" 重复声明`, 'Y0012');
+    events.set(e.name, { name: e.name, param: e.param });
+  }
+  if (events.size === 0) throw new IrError('机器至少要声明一个 `事`', 'Y0011');
+
+  // ---- 态
+  const states = new Map();
+  const byBen = new Map();
+  for (const s of ast.states) {
+    if (states.has(s.name)) throw new IrError(`态 "${s.name}" 重复声明`, 'Y0012');
+
+    let value;
+    try {
+      value = evalAst(s.value, {});
+    } catch (err) {
+      if (err instanceof EvalAstError) {
+        throw new IrError(`态 "${s.name}" 的值必须是常量：${err.message}`, 'Y0013');
+      }
+      throw err;
+    }
+    if (!Number.isInteger(value) || value < 0 || value > 0xfff) {
+      throw new IrError(`态 "${s.name}" 的值超出 12 位范围：${value}`, 'Y0101');
+    }
+
+    const b = ben(value);
+    if (byBen.has(b)) {
+      throw new IrError(
+        `态 "${s.name}" 与 "${byBen.get(b)}" 的本卦相同（都是 ${b}）。` +
+          `转移按本卦匹配，两者无法区分（Y0101）`,
+        'Y0101'
+      );
+    }
+    byBen.set(b, s.name);
+    states.set(s.name, { name: s.name, value, ben: b });
+  }
+  if (states.size === 0) throw new IrError('机器至少要声明一个 `态`', 'Y0011');
+
+  // ---- 起始
+  if (ast.starts.length !== 1) {
+    throw new IrError(`非 组 机器的 \`起\` 只能给一个态，收到 ${ast.starts.length} 个`, 'Y0205');
+  }
+  const start = states.get(ast.starts[0]);
+  if (!start) throw new IrError(`起始态 "${ast.starts[0]}" 未声明`, 'Y0205');
+
+  /** 态名可以在转移目标里当常量用：`-> 放行` */
+  const consts = {};
+  for (const [n, s] of states) consts[n] = s.value;
+
+  // ---- 转移
+  const rules = [];
+  const seen = new Map(); // `${fromBen}:${event}` -> rule
+  for (const r of ast.rules) {
+    const ev = events.get(r.event);
+    if (!ev) throw new IrError(`转移引用了未声明的事件 "${r.event}"`, 'Y0014');
+
+    let fromBen = null;
+    if (r.from !== null) {
+      const st = states.get(r.from);
+      if (!st) throw new IrError(`转移引用了未声明的态 "${r.from}"`, 'Y0014');
+      fromBen = st.ben;
+    }
+
+    const key = `${fromBen}:${r.event}`;
+    if (seen.has(key)) {
+      const where = fromBen === null ? '`*`' : `态 "${r.from}"`;
+      throw new IrError(`${where} 的事件 "${r.event}" 有两条转移规则（非确定，Y0202）`, 'Y0202');
+    }
+
+    checkVars(r.target, new Set([...states.keys(), ...(ev.param ? [ev.param] : [])]), r.event);
+    seen.set(key, true);
+
+    rules.push({ from: r.from, fromBen, event: r.event, param: ev.param, target: r.target });
+  }
+
+  // ---- 起始态必须出现在已声明的态里，且至少有一条出边
+  const startHasOut = rules.some((r) => r.fromBen === null || r.fromBen === start.ben);
+  if (!startHasOut) throw new IrError(`起始态 "${start.name}" 没有任何出边（Y0204 死锁）`, 'Y0204');
+
+  return {
+    name: ast.name,
+    events: [...events.values()],
+    states,
+    rules,
+    start,
+    consts,
+  };
+}
+
+/** 校验表达式里只出现允许的变量 */
+function checkVars(ast, allowed, eventName) {
+  switch (ast.t) {
+    case 'lit':
+    case 'ben':
+    case 'state':
+      return;
+    case 'var':
+      if (!allowed.has(ast.name)) {
+        throw new IrError(
+          `表达式引用了未定义的名字 "${ast.name}"；` +
+            `事件 "${eventName}" 可用的参数是 ${[...allowed].join(', ') || '（无）'}`,
+          'Y0014'
+        );
+      }
+      return;
+    case 'un':
+      return checkVars(ast.x, allowed, eventName);
+    case 'bin':
+      checkVars(ast.l, allowed, eventName);
+      return checkVars(ast.r, allowed, eventName);
+    case 'call':
+      for (const a of ast.args) checkVars(a, allowed, eventName);
+      return;
+    case 'match':
+      checkVars(ast.subject, allowed, eventName);
+      for (const arm of ast.arms) checkVars(arm.body, allowed, eventName);
+      return;
+    case 'block':
+      for (const e of ast.effects) checkVars(e, allowed, eventName);
+      return checkVars(ast.target, allowed, eventName);
+    case 'if':
+      checkVars(ast.cond, allowed, eventName);
+      checkVars(ast.then, allowed, eventName);
+      return checkVars(ast.otherwise, allowed, eventName);
+    default:
+      throw new IrError(`未知表达式节点 "${ast.t}"`);
+  }
+}
+
+/** 按事件把规则分组，解释器与后端共用 */
+function groupRules(ir) {
+  const byEvent = new Map();
+  for (const ev of ir.events) byEvent.set(ev.name, { specific: new Map(), wildcard: null });
+  for (const r of ir.rules) {
+    const g = byEvent.get(r.event);
+    if (r.fromBen === null) g.wildcard = r;
+    else g.specific.set(r.fromBen, r);
+  }
+  return byEvent;
+}
+
+/**
+ * 组机器的 IR。
+ *
+ * 与单机不同的三件事：
+ *   1. 状态是 N 个 6 位值（组件），不是 1 个 12 位变 —— 所以总状态数是 64^N
+ *   2. 一个事件**只能属于一个组件**，编译期检查，运行期因此没有歧义
+ *   3. 不允许 `*` 源态：通配会让事件无法唯一确定组件
+ */
+function buildGroupedIr(ast) {
+  const events = new Map();
+  for (const e of ast.events) {
+    if (events.has(e.name)) throw new IrError(`事件 "${e.name}" 重复声明`, 'Y0012');
+    events.set(e.name, { name: e.name, param: e.param });
+  }
+  if (!events.size) throw new IrError('机器至少要声明一个 `事`', 'Y0011');
+
+  if ((ast.states ?? []).length) {
+    throw new IrError('`组` 与 `态` 不能混用：组机器的状态由组成员构成', 'Y0010');
+  }
+
+  const components = [];
+  const compIndex = new Map();
+  const states = new Map();
+  const consts = {};
+
+  for (const g of ast.groups) {
+    if (compIndex.has(g.name)) throw new IrError(`组 "${g.name}" 重复声明`, 'Y0012');
+
+    const members = [];
+    const byBen = new Map();
+
+    for (const m of g.members) {
+      if (members.some((x) => x.name === m.name)) {
+        throw new IrError(`组 "${g.name}" 的成员 "${m.name}" 重复声明`, 'Y0012');
+      }
+
+      let value;
+      try {
+        value = evalAst(m.value, {});
+      } catch (err) {
+        if (err instanceof EvalAstError) {
+          throw new IrError(`成员 "${g.name}.${m.name}" 必须是常量：${err.message}`, 'Y0013');
+        }
+        throw err;
+      }
+      if (!Number.isInteger(value) || value < 0 || value > 0x3f) {
+        throw new IrError(
+          `组成员只能取 0..63（卦），"${g.name}.${m.name}" 得到 ${value}`,
+          'Y0101'
+        );
+      }
+
+      const b = ben(value);
+      if (byBen.has(b)) {
+        throw new IrError(
+          `组 "${g.name}" 里 "${m.name}" 与 "${byBen.get(b)}" 本卦相同，无法按卦匹配（Y0101）`,
+          'Y0101'
+        );
+      }
+      byBen.set(b, m.name);
+      members.push({ name: m.name, value, ben: b });
+    }
+
+    const index = components.length;
+    components.push({ name: g.name, index, members, byBen });
+    compIndex.set(g.name, index);
+
+    for (const m of members) {
+      const full = `${g.name}.${m.name}`;
+      states.set(full, { name: full, value: m.value, ben: m.ben, comp: index });
+      consts[full] = m.value;
+    }
+  }
+
+  // ---- 起点：每个组件各一个
+  if (ast.starts.length !== components.length) {
+    throw new IrError(
+      `组机器要给每个组件一个起点：${components.length} 个组件，收到 ${ast.starts.length} 个`,
+      'Y0205'
+    );
+  }
+  const startVals = new Array(components.length).fill(null);
+  for (const s of ast.starts) {
+    const st = states.get(s);
+    if (!st) throw new IrError(`起始态 "${s}" 未声明`, 'Y0205');
+    if (startVals[st.comp] !== null) {
+      throw new IrError(`组件 "${components[st.comp].name}" 给了两个起点`, 'Y0205');
+    }
+    startVals[st.comp] = st.value;
+  }
+
+  // ---- 规则
+  const rules = [];
+  const eventComp = new Map();
+  const seen = new Set();
+
+  for (const r of ast.rules) {
+    if (r.from === null) {
+      throw new IrError('组 机器不支持 `*` 源态：事件必须能唯一确定组件', 'Y0202');
+    }
+    const st = states.get(r.from);
+    if (!st) throw new IrError(`转移引用了未声明的成员 "${r.from}"`, 'Y0014');
+
+    const ev = events.get(r.event);
+    if (!ev) throw new IrError(`转移引用了未声明的事件 "${r.event}"`, 'Y0014');
+
+    if (eventComp.has(r.event) && eventComp.get(r.event) !== st.comp) {
+      throw new IrError(
+        `事件 "${r.event}" 同时被组件 "${components[eventComp.get(r.event)].name}" ` +
+          `与 "${components[st.comp].name}" 使用；组机器里一个事件只能属于一个组件`,
+        'Y0202'
+      );
+    }
+    eventComp.set(r.event, st.comp);
+
+    const key = `${st.comp}:${st.ben}:${r.event}`;
+    if (seen.has(key)) {
+      throw new IrError(`"${st.name}" 对事件 "${r.event}" 有两条规则（非确定，Y0202）`, 'Y0202');
+    }
+    seen.add(key);
+
+    checkVars(r.target, new Set([...states.keys(), ...(ev.param ? [ev.param] : [])]), r.event);
+    rules.push({ from: r.from, comp: st.comp, fromBen: st.ben, event: r.event, param: ev.param, target: r.target });
+  }
+
+  if (!rules.length) throw new IrError('组机器至少要有一条转移规则', 'Y0204');
+
+  return {
+    name: ast.name,
+    grouped: true,
+    events: [...events.values()],
+    components,
+    states,
+    consts,
+    rules,
+    start: { name: ast.starts.join('+'), value: startVals },
+    startVals,
+  };
+}
+
+/* ───────── yao/src/interp.js ───────── */
+/**
+ * 爻 · IR 解释器
+ *
+ * 与 C 后端共享同一份 IR 与同一套语义：这是 M2 能验证"生成的 C 是对的"的前提
+ * —— 同一组事件序列在解释器与 C 里必须得到同一条状态轨迹。
+ */
+
+
+
+
+
+const NO_TRANSITION = 0xffff;
+
+class Machine {
+  constructor(ir, opts = {}) {
+    this.ir = ir;
+    this.sink = typeof opts.sink === 'function' ? opts.sink : null;
+    this.stepCount = 0;
+
+    if (ir.grouped) {
+      this.states = ir.startVals.slice();
+      this.byEvent = new Map(ir.rules.map((r) => [r.event, r]));
+    } else {
+      this.groups = groupRules(ir);
+      this.state = ir.start.value;
+    }
+  }
+
+  get ben() { return ben(this.state); }
+
+  /** 组机器：某个组件当前的卦 */
+  compBen(i) { return ben(this.states[i]); }
+
+  /**
+   * 推进一步。
+   * @param {string} event
+   * @param {number} [arg]
+   */
+  step(event, arg = 0) {
+    if (this.ir.grouped) return this.stepGrouped(event, arg);
+
+    const from = this.state;
+    const g = this.groups.get(event);
+    if (!g) return { ok: false, from, to: from, reason: `未声明的事件 "${event}"` };
+
+    const rule = g.specific.get(ben(from)) ?? g.wildcard;
+    if (!rule) return { ok: false, from, to: from, reason: '此路不通' };
+
+    if (rule.param && (arg < 1 || arg > 6)) {
+      return { ok: false, from, to: from, reason: `参数 ${arg} 越界（应为 1..6）` };
+    }
+
+    let to;
+    try {
+      to = evalAst(rule.target, {
+        ben: ben(from),
+        state: from,
+        params: rule.param ? { [rule.param]: arg } : {},
+        consts: this.ir.consts,
+        sink: this.sink,
+      });
+    } catch (err) {
+      if (err instanceof EvalAstError) {
+        return { ok: false, from, to: from, reason: err.message };
+      }
+      throw err;
+    }
+
+    if (!Number.isInteger(to) || to < 0 || to > 0xfff) {
+      return { ok: false, from, to: from, reason: `转移目标越界：${to}` };
+    }
+
+    this.state = to;
+    this.stepCount++;
+    return { ok: true, from, to };
+  }
+
+  /**
+   * 组机器：事件在编译期已唯一绑定到某个组件，运行期只动那一个。
+   */
+  stepGrouped(event, arg = 0) {
+    const rule = this.byEvent.get(event);
+    const snap = this.states.slice();
+    if (!rule) {
+      return { ok: false, from: snap, to: snap, reason: `未声明的事件 "${event}"` };
+    }
+
+    const comp = rule.comp;
+    const cur = this.states[comp];
+    if (ben(cur) !== rule.fromBen) {
+      return { ok: false, from: snap, to: snap, reason: '此路不通' };
+    }
+    if (rule.param && (arg < 1 || arg > 6)) {
+      return { ok: false, from: snap, to: snap, reason: `参数 ${arg} 越界（应为 1..6）` };
+    }
+
+    let to;
+    try {
+      to = evalAst(rule.target, {
+        ben: ben(cur),
+        state: cur,
+        params: rule.param ? { [rule.param]: arg } : {},
+        consts: this.ir.consts,
+        sink: this.sink,
+      });
+    } catch (err) {
+      if (err instanceof EvalAstError) {
+        return { ok: false, from: snap, to: snap, reason: err.message };
+      }
+      throw err;
+    }
+
+    if (!Number.isInteger(to) || to < 0 || to > 0x3f) {
+      return { ok: false, from: snap, to: snap, reason: `组成员只能取 0..63，得到 ${to}` };
+    }
+
+    this.states[comp] = to;
+    this.stepCount++;
+    const after = this.states.slice();
+    return { ok: true, from: snap, to: after, comp };
+  }
+
+  describe() {
+    const b = ben(this.state);
+    return {
+      value: this.state,
+      ben: b,
+      name: nameOf(b),
+      dong: this.state > 0x3f ? ((this.state >> 6) & 0x3f) : 0,
+      bianShu: bianShu(this.state),
+    };
+  }
+}
+
+/** 从源码直接建机 */
+function compileToMachine(ast) {
+  return new Machine(buildIr(ast));
+}
+
+/**
+ * 跑一串事件，返回轨迹。用于测试与 `yao trace`。
+ * @param {ReturnType<typeof buildIr>} ir
+ * @param {(string|[string, number])[]} script
+ */
+function trace(ir, script) {
+  const m = new Machine(ir);
+  const out = [{ step: 0, event: '—', state: m.state }];
+  for (const item of script) {
+    const [ev, arg] = Array.isArray(item) ? item : [item, 0];
+    const r = m.step(ev, arg ?? 0);
+    if (!r.ok) {
+      out.push({ step: m.stepCount, event: ev, state: m.state, error: r.reason });
+      break;
+    }
+    out.push({ step: m.stepCount, event: ev, arg, state: m.state });
+  }
+  return out;
+}
+
+
+
+
+globalThis.__YAO__ = {
+  ben, dong, zhi, bian, cuo, zong, hu,
+  nameOf, glyphOf, meta, HEXAGRAMS, BY_ID, BY_NAME, POS_NAMES,
+  parse, buildIr, Machine, trace, evalAst, lex, renderLines,
+};
+
+
+/* ───────── app/expr.js ───────── */
+/**
+ * 爻 · 算 —— 表达式层
+ *
+ * 这一层是「宿主语言」：爻只管按键序列合法不合法，
+ * 浮点、函数、括号这些真正的算术在这里。
+ *
+ * 纯 ESM、零依赖，Node 与浏览器共用同一份源码。
+ */
+
+class CalcError extends Error {
+  constructor(message, code = 'E_CALC') {
+    super(message);
+    this.name = 'CalcError';
+    this.code = code;
+  }
+}
+
+/** 弯引号之类的「长得像运算符」的字符，统一折成 ASCII */
+const CHAR_MAP = {
+  '×': '*', '·': '*', '÷': '/', '−': '-', '–': '-', '—': '-',
+  '，': ',', '（': '(', '）': ')', '：': ':', '＋': '+', '－': '-',
+  '＊': '*', '／': '/', '＾': '^', '！': '!', '％': '%',
+};
+
+/** 在词法层直接换成一个标识符/记号 */
+const ALIAS_CHAR = {
+  'π': 'pi', '∞': 'inf', 'Σ': 'sum', '∫': 'integral',
+};
+
+const FUNCTIONS = new Set([
+  'sin', 'cos', 'tan', 'cot', 'sec', 'csc',
+  'asin', 'acos', 'atan',
+  'sinh', 'cosh', 'tanh', 'asinh', 'acosh', 'atanh',
+  'ln', 'lg', 'log', 'log2', 'log10', 'exp',
+  'sqrt', 'cbrt', 'abs', 'sign',
+  'floor', 'ceil', 'round', 'trunc',
+  'min', 'max', 'mod', 'pow', 'fact', 'gcd', 'lcm',
+  'integral', '积分', 'deriv', '导数',
+]);
+
+const CONSTANTS = new Set(['pi', 'e', 'tau', 'ans', 'x', 'phi']);
+
+// ---------------------------------------------------------------- 词法
+
+/**
+ * @param {string} src
+ * @returns {{t:string, v?:any, pos:number}[]}
+ */
+function tokenize(src) {
+  if (typeof src !== 'string') throw new CalcError('表达式必须是字符串', 'E_TYPE');
+  const toks = [];
+  let i = 0;
+
+  while (i < src.length) {
+    const ch = src[i];
+
+    if (/\s/.test(ch) || ch === '\u3000') { i++; continue; }
+
+    if (ch >= '0' && ch <= '9') {
+      const m = /^\d*\.?\d+(?:[eE][+-]?\d+)?/.exec(src.slice(i));
+      const text = m[0];
+      toks.push({ t: 'num', v: Number(text), text, pos: i });
+      i += text.length;
+      continue;
+    }
+
+    if (ch === '.') {
+      const m = /^\.\d+(?:[eE][+-]?\d+)?/.exec(src.slice(i));
+      if (!m) throw new CalcError('小数点后面缺少数字', 'E_SYNTAX');
+      toks.push({ t: 'num', v: Number(m[0]), text: m[0], pos: i });
+      i += m[0].length;
+      continue;
+    }
+
+    if (/[A-Za-z_\u4e00-\u9fff]/.test(ch)) {
+      const m = /^[A-Za-z_\u4e00-\u9fff][A-Za-z0-9_\u4e00-\u9fff]*/.exec(src.slice(i));
+      const name = m[0];
+      const lower = name.toLowerCase();
+      const canon = FUNCTIONS.has(lower) ? lower : CONSTANTS.has(lower) ? lower : name;
+      toks.push({ t: 'name', v: canon, text: name, pos: i });
+      i += name.length;
+      continue;
+    }
+
+    if (ALIAS_CHAR[ch]) {
+      const name = ALIAS_CHAR[ch];
+      toks.push({ t: 'name', v: name, text: ch, pos: i });
+      i += 1;
+      continue;
+    }
+
+    const mapped = CHAR_MAP[ch] ?? ch;
+    if ('+-*/^%(),!'.includes(mapped)) {
+      toks.push({ t: 'op', v: mapped, text: ch, pos: i });
+      i += 1;
+      continue;
+    }
+
+    if (ch === '²') { toks.push({ t: 'op', v: '²', text: ch, pos: i }); i++; continue; }
+    if (ch === '³') { toks.push({ t: 'op', v: '³', text: ch, pos: i }); i++; continue; }
+    if (ch === '√') { toks.push({ t: 'op', v: '√', text: ch, pos: i }); i++; continue; }
+    if (ch === '∛') { toks.push({ t: 'op', v: '∛', text: ch, pos: i }); i++; continue; }
+
+    throw new CalcError(`无法识别的字符 “${ch}”`, 'E_SYNTAX');
+  }
+
+  toks.push({ t: 'eof', v: null, pos: src.length });
+  return toks;
+}
+
+// ---------------------------------------------------------------- 语法
+
+const BIN_PREC = { '+': 1, '-': 1, '*': 2, '/': 2, '%': 2 };
+
+class ExprParser {
+  constructor(toks) {
+    this.toks = toks;
+    this.i = 0;
+  }
+
+  peek(k = 0) { return this.toks[this.i + k]; }
+  next() { return this.toks[this.i++]; }
+  isOp(v) { const t = this.peek(); return t.t === 'op' && t.v === v; }
+  eatOp(v) { if (this.isOp(v)) { this.i++; return true; } return false; }
+  expectOp(v) {
+    if (!this.eatOp(v)) throw new CalcError(`缺少 “${v}”`, 'E_SYNTAX');
+  }
+
+  startsPrimary(t) {
+    if (t.t === 'num') return true;
+    if (t.t === 'name') return true;
+    if (t.t === 'op' && t.v === '(') return true;
+    return false;
+  }
+
+  parse() {
+    if (this.peek().t === 'eof') throw new CalcError('表达式是空的', 'E_EMPTY');
+    const node = this.parseExpr();
+    if (this.peek().t !== 'eof') {
+      const t = this.peek();
+      throw new CalcError(`多余的内容 “${t.text ?? t.v}”`, 'E_SYNTAX');
+    }
+    return node;
+  }
+
+  parseExpr() { return this.parseAdd(); }
+
+  parseAdd() {
+    let left = this.parseMul();
+    for (;;) {
+      const t = this.peek();
+      if (t.t !== 'op' || (t.v !== '+' && t.v !== '-')) break;
+      this.i++;
+      const right = this.parseMul();
+      left = { t: 'bin', op: t.v, l: left, r: right };
+    }
+    return left;
+  }
+
+  parseMul() {
+    let left = this.parseUnary();
+    for (;;) {
+      const t = this.peek();
+      if (t.t === 'op' && BIN_PREC[t.v] >= 2) {
+        this.i++;
+        left = { t: 'bin', op: t.v, l: left, r: this.parseUnary() };
+        continue;
+      }
+      // 隐式乘法：2π、3(4+5)、2sin(30)
+      if (this.startsPrimary(t)) {
+        left = { t: 'bin', op: '*', l: left, r: this.parseUnary(), implicit: true };
+        continue;
+      }
+      break;
+    }
+    return left;
+  }
+
+  parseUnary() {
+    if (this.isOp('-')) { this.i++; return { t: 'neg', x: this.parseUnary() }; }
+    if (this.isOp('+')) { this.i++; return this.parseUnary(); }
+    if (this.isOp('√')) { this.i++; return { t: 'call', name: 'sqrt', args: [this.parseUnary()] }; }
+    if (this.isOp('∛')) { this.i++; return { t: 'call', name: 'cbrt', args: [this.parseUnary()] }; }
+    return this.parsePower();
+  }
+
+  parsePower() {
+    const base = this.parsePostfix();
+    if (this.isOp('^')) {
+      this.i++;
+      return { t: 'bin', op: '^', l: base, r: this.parseUnary() };
+    }
+    return base;
+  }
+
+  parsePostfix() {
+    let node = this.parsePrimary();
+    for (;;) {
+      if (this.isOp('!')) { this.i++; node = { t: 'post', op: 'fact', x: node }; continue; }
+      if (this.isOp('²')) { this.i++; node = { t: 'bin', op: '^', l: node, r: { t: 'num', v: 2 } }; continue; }
+      if (this.isOp('³')) { this.i++; node = { t: 'bin', op: '^', l: node, r: { t: 'num', v: 3 } }; continue; }
+      break;
+    }
+    return node;
+  }
+
+  parsePrimary() {
+    const t = this.peek();
+
+    if (t.t === 'num') { this.i++; return { t: 'num', v: t.v }; }
+
+    if (t.t === 'op' && t.v === '(') {
+      this.i++;
+      const inner = this.parseExpr();
+      this.expectOp(')');
+      return inner;
+    }
+
+    if (t.t === 'name') {
+      this.i++;
+      const name = t.v;
+
+      if (this.eatOp('(')) {
+        const args = [];
+        if (!this.isOp(')')) {
+          for (;;) {
+            args.push(this.parseExpr());
+            if (this.eatOp(',')) continue;
+            break;
+          }
+        }
+        this.expectOp(')');
+        if (!FUNCTIONS.has(name)) throw new CalcError(`未知函数 “${name}”`, 'E_NAME');
+        return { t: 'call', name, args };
+      }
+
+      if (CONSTANTS.has(name)) return { t: 'var', name };
+      if (FUNCTIONS.has(name)) {
+        throw new CalcError(`函数 “${name}” 后面缺少括号和参数`, 'E_SYNTAX');
+      }
+      throw new CalcError(`未知的名字 “${name}”`, 'E_NAME');
+    }
+
+    if (t.t === 'eof') throw new CalcError('表达式不完整', 'E_SYNTAX');
+    throw new CalcError(`此处不应出现 “${t.text ?? t.v}”`, 'E_SYNTAX');
+  }
+}
+
+/** @param {string} src */
+function parseExpression(src) {
+  return new ExprParser(tokenize(src)).parse();
+}
+
+// ---------------------------------------------------------------- 求值
+
+const DEG = Math.PI / 180;
+
+function toRad(v, mode) { return mode === 'deg' ? v * DEG : v; }
+function fromRad(v, mode) { return mode === 'deg' ? v / DEG : v; }
+
+function need(cond, message) {
+  if (!cond) throw new CalcError(message, 'E_DOMAIN');
+}
+
+function factorial(n) {
+  need(Number.isInteger(n), '阶乘只对非负整数有定义');
+  need(n >= 0 && n <= 170, '阶乘的定义域是 0..170');
+  let r = 1;
+  for (let i = 2; i <= n; i++) r *= i;
+  return r;
+}
+
+/** 一元/多元函数表（角度模式只影响三角与反三角） */
+function applyFunction(name, args, mode) {
+  const a = (k = 0) => {
+    if (args.length <= k) throw new CalcError(`“${name}” 缺少第 ${k + 1} 个参数`, 'E_ARITY');
+    return args[k];
+  };
+
+  switch (name) {
+    case 'sin': return Math.sin(toRad(a(), mode));
+    case 'cos': return Math.cos(toRad(a(), mode));
+    case 'tan': {
+      const r = toRad(a(), mode);
+      need(Math.abs(Math.cos(r)) > 1e-12, 'tan 在该点无定义');
+      return Math.tan(r);
+    }
+    case 'cot': { const r = toRad(a(), mode); need(Math.abs(Math.sin(r)) > 1e-12, 'cot 在该点无定义'); return 1 / Math.tan(r); }
+    case 'sec': { const r = toRad(a(), mode); need(Math.abs(Math.cos(r)) > 1e-12, 'sec 在该点无定义'); return 1 / Math.cos(r); }
+    case 'csc': { const r = toRad(a(), mode); need(Math.abs(Math.sin(r)) > 1e-12, 'csc 在该点无定义'); return 1 / Math.sin(r); }
+
+    case 'asin': { need(a() >= -1 && a() <= 1, 'asin 的参数必须在 [-1, 1] 内'); return fromRad(Math.asin(a()), mode); }
+    case 'acos': { need(a() >= -1 && a() <= 1, 'acos 的参数必须在 [-1, 1] 内'); return fromRad(Math.acos(a()), mode); }
+    case 'atan': return fromRad(Math.atan(a()), mode);
+
+    case 'sinh': return Math.sinh(a());
+    case 'cosh': return Math.cosh(a());
+    case 'tanh': return Math.tanh(a());
+    case 'asinh': return Math.asinh(a());
+    case 'acosh': need(a() >= 1, 'acosh 的参数必须 ≥ 1'); return Math.acosh(a());
+    case 'atanh': need(Math.abs(a()) < 1, 'atanh 的参数必须在 (-1, 1) 内'); return Math.atanh(a());
+
+    case 'ln': need(a() > 0, 'ln 的真数必须大于 0'); return Math.log(a());
+    case 'lg':
+    case 'log10':
+      need(a() > 0, 'lg 的真数必须大于 0'); return Math.log10(a());
+    case 'log': {
+      if (args.length === 1) { need(a() > 0, 'log 的真数必须大于 0'); return Math.log10(a()); }
+      need(a() > 0, 'log 的真数必须大于 0');
+      const b = a(1);
+      need(b > 0 && b !== 1, 'log 的底数必须大于 0 且不等于 1');
+      return Math.log(a()) / Math.log(b);
+    }
+    case 'log2': need(a() > 0, 'log₂ 的真数必须大于 0'); return Math.log2(a());
+    case 'exp': return Math.exp(a());
+
+    case 'sqrt': need(a() >= 0, '√ 的参数不能为负'); return Math.sqrt(a());
+    case 'cbrt': return Math.cbrt(a());
+    case 'abs': return Math.abs(a());
+    case 'sign': return Math.sign(a());
+    case 'floor': return Math.floor(a());
+    case 'ceil': return Math.ceil(a());
+    case 'round': return Math.round(a());
+    case 'trunc': return Math.trunc(a());
+
+    case 'min': need(args.length >= 1, 'min 至少需要一个参数'); return Math.min(...args);
+    case 'max': need(args.length >= 1, 'max 至少需要一个参数'); return Math.max(...args);
+    case 'pow': return Math.pow(a(), a(1));
+    case 'mod': { const d = a(1); need(d !== 0, '取余的除数不能为 0'); return ((a() % d) + d) % d; }
+    case 'fact': return factorial(a());
+    case 'gcd': return gcd(Math.abs(Math.trunc(a())), Math.abs(Math.trunc(a(1))));
+    case 'lcm': {
+      const x = Math.abs(Math.trunc(a())), y = Math.abs(Math.trunc(a(1)));
+      need(x !== 0 && y !== 0, 'lcm 不接受 0');
+      return (x / gcd(x, y)) * y;
+    }
+
+    default:
+      throw new CalcError(`“${name}” 还没实现`, 'E_NAME');
+  }
+}
+
+function gcd(a, b) { while (b) { const t = a % b; a = b; b = t; } return a || 1; }
+
+/**
+ * 求值。
+ * @param {object} node  parseExpression / parse 出来的 AST
+ * @param {object} [ctx]
+ * @param {number} [ctx.x]     变量 x（微积分用）
+ * @param {number} [ctx.ans]   上一次结果
+ * @param {'rad'|'deg'} [ctx.angleMode]
+ * @param {{integrate?:Function, derivative?:Function}} [ctx.hooks]
+ * @returns {number}
+ */
+function evaluateAst(node, ctx = {}) {
+  const mode = ctx.angleMode === 'deg' ? 'deg' : 'rad';
+  const hooks = ctx.hooks ?? {};
+
+  const go = (n) => {
+    switch (n.t) {
+      case 'num': return n.v;
+
+      case 'var': {
+        switch (n.name) {
+          case 'pi': return Math.PI;
+          case 'e': return Math.E;
+          case 'tau': return Math.PI * 2;
+          case 'phi': return (1 + Math.sqrt(5)) / 2;
+          case 'ans': return ctx.ans ?? 0;
+          case 'x': {
+            if (ctx.x === undefined) throw new CalcError('这里的 x 没有取值（只有在微积分里才有）', 'E_NAME');
+            return ctx.x;
+          }
+          default: throw new CalcError(`未知的常量 “${n.name}”`, 'E_NAME');
+        }
+      }
+
+      case 'neg': return -go(n.x);
+      case 'post': {
+        if (n.op === 'fact') return factorial(go(n.x));
+        throw new CalcError(`未知的后缀运算 “${n.op}”`, 'E_CODE');
+      }
+
+      case 'bin': {
+        const a = go(n.l);
+        const b = go(n.r);
+        switch (n.op) {
+          case '+': return a + b;
+          case '-': return a - b;
+          case '*': return a * b;
+          case '/':
+            if (b === 0) throw new CalcError('除数不能为 0', 'E_ZERO');
+            return a / b;
+          case '%':
+            if (b === 0) throw new CalcError('取余的除数不能为 0', 'E_ZERO');
+            return ((a % b) + b) % b;
+          case '^': {
+            if (a < 0 && !Number.isInteger(b)) throw new CalcError('负数的非整数次幂不在实数范围内', 'E_DOMAIN');
+            return Math.pow(a, b);
+          }
+          default: throw new CalcError(`未知运算符 “${n.op}”`, 'E_CODE');
+        }
+      }
+
+      case 'call': {
+        // 微积分在 AST 上直接取子表达式，交给宿主数值库
+        if (n.name === 'integral' || n.name === '积分') {
+          need(n.args.length === 3, '∫ 需要三个参数：∫(f(x), 下限, 上限)');
+          if (typeof hooks.integrate !== 'function') throw new CalcError('积分器不可用', 'E_HOOK');
+          const a = go(n.args[1]);
+          const b = go(n.args[2]);
+          return hooks.integrate((v) => evaluateAst(n.args[0], { ...ctx, x: v }), a, b);
+        }
+        if (n.name === 'deriv' || n.name === '导数') {
+          need(n.args.length === 2, 'd 需要两个参数：d(f(x), x₀)');
+          if (typeof hooks.derivative !== 'function') throw new CalcError('求导器不可用', 'E_HOOK');
+          const x0 = go(n.args[1]);
+          return hooks.derivative((v) => evaluateAst(n.args[0], { ...ctx, x: v }), x0);
+        }
+
+        const args = n.args.map(go);
+        const v = applyFunction(n.name, args, mode);
+        if (Number.isNaN(v)) throw new CalcError('结果未定义（NaN）', 'E_NAN');
+        if (!Number.isFinite(v)) throw new CalcError('结果超出浮点数范围', 'E_OVERFLOW');
+        return v;
+      }
+
+      default:
+        throw new CalcError(`未知的表达式节点 “${n.t}”`, 'E_CODE');
+    }
+  };
+
+  const value = go(node);
+  if (Number.isNaN(value)) throw new CalcError('结果未定义（NaN）', 'E_NAN');
+  if (!Number.isFinite(value)) throw new CalcError('结果超出浮点数范围', 'E_OVERFLOW');
+  return value;
+}
+
+/**
+ * 一步到位：字符串 → 数。
+ */
+function evaluate(src, ctx = {}) {
+  return evaluateAst(parseExpression(src), ctx);
+}
+
+/** 收集表达式里用到的变量（微积分面板据此判断要不要 x） */
+function variablesOf(node, out = new Set()) {
+  switch (node.t) {
+    case 'var': out.add(node.name); break;
+    case 'neg': variablesOf(node.x, out); break;
+    case 'post': variablesOf(node.x, out); break;
+    case 'bin': variablesOf(node.l, out); variablesOf(node.r, out); break;
+    case 'call': for (const a of node.args) variablesOf(a, out); break;
+    default: break;
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- 显示
+
+/**
+ * 数字 → 人能读的短字符串。
+ * 12 位有效数字；过大/过小时用科学计数法。
+ */
+function formatNumber(v, digits = 12) {
+  if (typeof v !== 'number' || Number.isNaN(v)) return 'NaN';
+  if (!Number.isFinite(v)) return v > 0 ? '∞' : '-∞';
+  if (v === 0) return '0';
+
+  const a = Math.abs(v);
+  if (a >= 1e12 || a < 1e-9) {
+    const exp = v.toExponential(Math.min(Math.max(digits - 1, 1), 17));
+    const [mant, e] = exp.split('e');
+    const m = mant.replace(/\.?0+$/, '');
+    const sign = e[0] === '-' ? '-' : '+';
+    const num = e.slice(1).replace(/^0+/, '') || '0';
+    return `${m}e${sign}${num}`;
+  }
+
+  let s = v.toPrecision(Math.min(Math.max(digits, 1), 17));
+  if (s.includes('e')) {
+    let [mant, e] = s.split('e');
+    mant = mant.replace(/\.?0+$/, '');
+    const sign = e[0] === '-' ? '-' : '+';
+    return `${mant}e${sign}${e.slice(1).replace(/^0+/, '') || '0'}`;
+  }
+  if (s.includes('.')) s = s.replace(/\.?0+$/, '');
+  return s;
+}
+
+/** 结果里给「复制」用的全精度形式 */
+function fullPrecision(v) {
+  if (!Number.isFinite(v)) return String(v);
+  return String(v);
+}
+
+
+/* ───────── app/calculus.js ───────── */
+/**
+ * 爻 · 算 —— 数值微积分
+ *
+ * 定积分：自适应 Simpson，误差估计直接写进递归判据。
+ * 导数：四点差分 + Richardson 外推（消掉 h⁴ 项）。
+ *
+ * 都是纯数值方法，不需要符号求导，因此 f(x) 可以是任何表达式。
+ */
+
+
+
+/**
+ * 把一段 f(x) 源码编译成函数。
+ * @param {string} src
+ * @param {{angleMode?:'rad'|'deg'}} [opts]
+ * @returns {{f:(x:number)=>number, ast:object, usesX:boolean}}
+ */
+function compileFunction(src, opts = {}) {
+  const ast = parseExpression(src);
+  const f = (x) => evaluateAst(ast, { x, angleMode: opts.angleMode ?? 'rad' });
+  return { f, ast, usesX: true };
+}
+
+const EPS_TOL = 1e-11;
+
+/**
+ * 定积分 ∫ₐᵇ f dx，自适应 Simpson。
+ * @param {(x:number)=>number} f
+ * @param {number} a
+ * @param {number} b
+ * @param {{tol?:number, maxDepth?:number}} [opts]
+ * @returns {{value:number, evals:number, segments:number, error:number, converged:boolean}}
+ */
+function integrate(f, a, b, opts = {}) {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) {
+    throw new CalcError('积分上下限必须是有限数', 'E_BOUND');
+  }
+
+  const tol = opts.tol ?? EPS_TOL;
+  const maxDepth = opts.maxDepth ?? 40;
+  const sign = a <= b ? 1 : -1;
+  const lo = Math.min(a, b);
+  const hi = Math.max(a, b);
+
+  if (lo === hi) return { value: 0, evals: 0, segments: 0, error: 0, converged: true };
+
+  let evals = 0;
+  let segments = 1;
+
+  const F = (x) => {
+    evals++;
+    let v;
+    try {
+      v = f(x);
+    } catch (err) {
+      throw new CalcError(`被积函数在 x=${x} 处求值失败：${err.message}`, 'E_F');
+    }
+    if (typeof v !== 'number' || Number.isNaN(v)) {
+      throw new CalcError(`被积函数在 x≈${x} 处取不到实数值`, 'E_F');
+    }
+    if (!Number.isFinite(v)) {
+      throw new CalcError(`被积函数在 x≈${x} 处发散`, 'E_F');
+    }
+    return v;
+  };
+
+  const mid = (lo + hi) / 2;
+  const f0 = F(lo);
+  const f1 = F(mid);
+  const f2 = F(hi);
+  const whole = ((hi - lo) * (f0 + 4 * f1 + f2)) / 6;
+
+  let estimatedErr = 0;
+
+  /** @returns {number} */
+  const rec = (x0, x2, g0, g1, g2, S, depth) => {
+    const m = (x0 + x2) / 2;
+    const lm = (x0 + m) / 2;
+    const rm = (m + x2) / 2;
+    const glm = F(lm);
+    const grm = F(rm);
+
+    const Sl = ((m - x0) * (g0 + 4 * glm + g1)) / 6;
+    const Sr = ((x2 - m) * (g1 + 4 * grm + g2)) / 6;
+    const delta = Sl + Sr - S;
+
+    if (depth <= 0 || Math.abs(delta) <= 15 * tol) {
+      estimatedErr += Math.abs(delta) / 15;
+      return Sl + Sr + delta / 15;
+    }
+
+    segments++;
+    return (
+      rec(x0, m, g0, glm, g1, Sl, depth - 1) +
+      rec(m, x2, g1, grm, g2, Sr, depth - 1)
+    );
+  };
+
+  const value = rec(lo, hi, f0, f1, f2, whole, maxDepth);
+
+  if (!Number.isFinite(value)) {
+    throw new CalcError('积分结果超出浮点数范围', 'E_OVERFLOW');
+  }
+
+  return {
+    value: sign * value,
+    evals,
+    segments,
+    error: estimatedErr,
+    converged: estimatedErr <= Math.max(1e-10, 1e-8 * Math.abs(value)),
+  };
+}
+
+/**
+ * f′(x₀)，四点差分 + Richardson 外推。
+ * @param {(x:number)=>number} f
+ * @param {number} x0
+ * @param {{h?:number}} [opts]
+ * @returns {{value:number, h:number, evals:number, error:number, converged:boolean}}
+ */
+function derivative(f, x0, opts = {}) {
+  if (!Number.isFinite(x0)) throw new CalcError('求导点必须是有限数', 'E_BOUND');
+
+  let evals = 0;
+  const F = (x) => {
+    evals++;
+    let v;
+    try {
+      v = f(x);
+    } catch (err) {
+      throw new CalcError(`函数在 x≈${x} 处求值失败：${err.message}`, 'E_F');
+    }
+    if (typeof v !== 'number' || Number.isNaN(v)) {
+      throw new CalcError(`函数在 x≈${x} 处取不到实数值`, 'E_F');
+    }
+    if (!Number.isFinite(v)) {
+      throw new CalcError(`函数在 x≈${x} 处发散，无法差商`, 'E_F');
+    }
+    return v;
+  };
+
+  // 四点差分：误差 O(h⁴)，再 Richardson 一次得到 O(h⁶)
+  const D = (h) =>
+    (F(x0 - 2 * h) - 8 * F(x0 - h) + 8 * F(x0 + h) - F(x0 + 2 * h)) / (12 * h);
+
+  let h = (opts.h ?? 1e-2) * Math.max(1, Math.abs(x0));
+  let prev = null;
+  let best = null;
+  let bestDiff = Infinity;
+
+  for (let k = 0; k < 12; k++) {
+    const d1 = D(h);
+    const d2 = D(h / 2);
+    const R = (16 * d2 - d1) / 15;
+
+    if (!Number.isFinite(R)) break;
+
+    const diff = prev === null ? Infinity : Math.abs(R - prev);
+    if (prev !== null && diff <= 1e-8 * (1 + Math.abs(R))) {
+      return { value: R, h, evals, error: diff, converged: true };
+    }
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      best = { value: R, h, evals };
+    }
+    prev = R;
+    h /= 2;
+  }
+
+  if (!best) throw new CalcError('数值求导失败：函数在该点附近没有可用的差商', 'E_DIFF');
+  return { value: best.value, h: best.h, evals: best.evals, error: bestDiff, converged: false };
+}
+
+/** 二阶导（对一阶导再差商），给「微积分」面板留个余量 */
+function secondDerivative(f, x0, opts = {}) {
+  const f1 = (x) => derivative(f, x, opts).value;
+  return derivative(f1, x0, opts);
+}
+
+
+/* ───────── app/engine.js ───────── */
+/**
+ * 爻 · 算 —— 宿主层：把按键送进状态机，把状态机的裁决变成界面行为
+ *
+ * 分工（和 SPEC §10 一致）：
+ *   爻  ：这个键在这个相位能不能按、按完进入哪个相位、括号还剩几层
+ *   宿主：操作数长什么样、算出来是多少
+ *
+ * 所有按键都必须先过 state.machine.step()。state.machine 说「此路不通」，
+ * 宿主就只负责响一声，绝不自己猜。
+ */
+
+
+
+const PHASE_NAMES = ['空白', '输入', '待符', '括号', '收括', '结果', '出错'];
+
+const PHASE = {
+  空白: 0, 输入: 1, 待符: 2, 括号: 3, 收括: 4, 结果: 5, 出错: 6,
+};
+
+/** 事件名 → 机器里的事 */
+const EV = {
+  digit: '数字',
+  dot: '小数点',
+  op: '运算符',
+  lp: '左括号',
+  rp: '右括号',
+  const: '常数',
+  equals: '等号',
+  clear: '清除',
+  error: '出错',
+};
+
+/** 一元函数：机器只认「哪一类 + 编号」，具体是哪个函数由宿主解释 */
+const FUNCS = {
+  sin:  { ev: '三角函数', arg: 1, label: 'sin', kind: 'fn' },
+  cos:  { ev: '三角函数', arg: 2, label: 'cos', kind: 'fn' },
+  tan:  { ev: '三角函数', arg: 3, label: 'tan', kind: 'fn' },
+  asin: { ev: '三角函数', arg: 4, label: 'asin', kind: 'fn' },
+  acos: { ev: '三角函数', arg: 5, label: 'acos', kind: 'fn' },
+  atan: { ev: '三角函数', arg: 6, label: 'atan', kind: 'fn' },
+
+  ln:   { ev: '对数函数', arg: 1, label: 'ln', kind: 'fn' },
+  lg:   { ev: '对数函数', arg: 2, label: 'lg', kind: 'fn' },
+  log2: { ev: '对数函数', arg: 3, label: 'log2', kind: 'fn' },
+  exp:  { ev: '对数函数', arg: 4, label: 'exp', kind: 'fn' },
+  pow10:{ ev: '对数函数', arg: 5, label: '10^', kind: 'fn' },
+  sinh: { ev: '对数函数', arg: 6, label: 'sinh', kind: 'fn' },
+
+  sqrt: { ev: '幂函数', arg: 1, label: '√', kind: 'fn' },
+  cbrt: { ev: '幂函数', arg: 2, label: '∛', kind: 'fn' },
+  abs:  { ev: '幂函数', arg: 6, label: 'abs', kind: 'fn' },
+
+  sq:   { ev: '幂函数', arg: 3, label: 'x²', kind: 'post' },
+  cube: { ev: '幂函数', arg: 4, label: 'x³', kind: 'post' },
+  recip:{ ev: '幂函数', arg: 5, label: '1/x', kind: 'post' },
+  fact: { ev: '阶乘',   arg: 0, label: 'x!', kind: 'post' },
+  neg:  { ev: '负号',   arg: 0, label: '±', kind: 'post' },
+};
+
+const OPS = {
+  1: { ch: '+', display: ' + ', pretty: '+' },
+  2: { ch: '-', display: ' − ', pretty: '−' },
+  3: { ch: '*', display: ' × ', pretty: '×' },
+  4: { ch: '/', display: ' ÷ ', pretty: '÷' },
+  5: { ch: '^', display: ' ^ ', pretty: '^' },
+  6: { ch: '%', display: ' mod ', pretty: 'mod' },
+};
+
+const CONSTS = {
+  1: { name: 'pi', display: 'π' },
+  2: { name: 'e', display: 'e' },
+  3: { name: 'ans', display: 'Ans' },
+};
+
+// ---------------------------------------------------------------- 渲染
+
+function needsParens(s) {
+  return !/^[0-9.]+$/.test(s) && !/^[A-Za-z]+$/.test(s);
+}
+
+function wrapPost(kind, inner, mode) {
+  const disp = mode === 'display';
+  switch (kind) {
+    case 'sq': return disp ? `${needsParens(inner) ? `(${inner})` : inner}²` : `(${inner})^2`;
+    case 'cube': return disp ? `${needsParens(inner) ? `(${inner})` : inner}³` : `(${inner})^3`;
+    case 'recip': return `1/(${inner})`;
+    case 'fact': return disp ? `${needsParens(inner) ? `(${inner})` : inner}!` : `(${inner})!`;
+    case 'neg': return disp ? `−${needsParens(inner) ? `(${inner})` : inner}` : `-(${inner})`;
+    default: return inner;
+  }
+}
+
+/**
+ * token 序列 → 可读文本（display）或可解析文本（eval）。
+ * 后缀函数会把「上一个操作数」整个包起来，所以这里要记住操作数的起点。
+ */
+function render(tokens, mode = 'display') {
+  const disp = mode === 'display';
+  let out = '';
+  const parenStarts = [];
+  let lastStart = null;
+  let prevOperand = false;
+
+  const mul = disp ? ' × ' : '*';
+
+  for (const t of tokens) {
+    if (prevOperand && (t.k === 'num' || t.k === 'const' || t.k === 'lp')) {
+      out += mul;
+      lastStart = null;
+      prevOperand = false;
+    }
+
+    switch (t.k) {
+      case 'num': {
+        lastStart = out.length;
+        out += disp ? (t.display ?? t.text) : t.text;
+        prevOperand = true;
+        break;
+      }
+      case 'const': {
+        const c = CONSTS[t.v];
+        lastStart = out.length;
+        if (c.name === 'ans') {
+          out += disp ? (t.display ?? `Ans`) : 'ans';
+        } else {
+          out += c.display;
+        }
+        prevOperand = true;
+        break;
+      }
+      case 'lp': {
+        parenStarts.push(out.length);
+        out += '(';
+        prevOperand = false;
+        lastStart = null;
+        break;
+      }
+      case 'rp': {
+        const s = parenStarts.pop();
+        out += ')';
+        lastStart = s ?? null;
+        prevOperand = true;
+        break;
+      }
+      case 'op': {
+        out += disp ? OPS[t.v].display : OPS[t.v].ch;
+        prevOperand = false;
+        lastStart = null;
+        break;
+      }
+      case 'fn': {
+        const s = lastStart ?? 0;
+        const inner = out.slice(s);
+        let head = t.v;
+        if (t.v === 'pow10') head = disp ? '10^' : '10^';
+        else if (disp) {
+          const f = FUNCS[t.v];
+          head = f ? f.label : t.v;
+        }
+        out = out.slice(0, s) + head + '(' + inner + ')';
+        lastStart = s;
+        prevOperand = true;
+        break;
+      }
+      case 'post': {
+        const s = lastStart ?? 0;
+        const inner = out.slice(s);
+        out = out.slice(0, s) + wrapPost(t.v, inner, mode);
+        lastStart = s;
+        prevOperand = true;
+        break;
+      }
+      default:
+        break;
+    }
+  }
+
+  return out;
+}
+
+// ---------------------------------------------------------------- 引擎
+
+/**
+ * @param {{yao:object, source:string, hooks?:object, angleMode?:'rad'|'deg'}} opts
+ */
+function createEngine(opts) {
+  const { yao, source } = opts;
+  const hooks = opts.hooks ?? {};
+  const ast = yao.parse(source);
+  const ir = yao.buildIr(ast);
+
+  let machine = new yao.Machine(ir);
+  let tokens = [];
+  let lastResult = null;
+  let angleMode = opts.angleMode === 'deg' ? 'deg' : 'rad';
+  let history = [];
+  let log = [];
+  let lastError = null;
+
+  const ben = () => yao.ben(machine.state);
+  const dong = () => yao.dong(machine.state);
+  const phaseId = () => ben();
+  const phaseName = () => PHASE_NAMES[phaseId()] ?? '?';
+
+  function record(ev, arg, from, to, ok) {
+    log.push({ ev, arg, from, to, ok, at: Date.now() });
+    if (log.length > 60) log.shift();
+  }
+
+  function step(ev, arg = 0) {
+    const from = machine.state;
+    const r = machine.step(ev, arg);
+    record(ev, arg, from, r.to, r.ok);
+    return r;
+  }
+
+  function ok(extra = {}) { return { ok: true, phase: phaseName(), ...extra }; }
+  function fail(message, code = 'E_REJECT') { lastError = message; return { ok: false, message, code, phase: phaseName() }; }
+
+  function sync() {
+    machine = new yao.Machine(ir);
+    for (const t of tokens) {
+      if (!t.ev) continue;
+      const r = machine.step(t.ev, t.arg ?? 0);
+      if (!r.ok) break;
+    }
+  }
+
+  function ansToken() {
+    const t = { k: 'const', v: 3, ev: '常数', arg: 3 };
+    if (lastResult !== null) t.display = formatNumber(lastResult);
+    return t;
+  }
+
+  function valueToken(value) {
+    return { k: 'num', text: String(value), display: formatNumber(value), ev: '数字' };
+  }
+
+  function opToken(code) {
+    return { k: 'op', v: code, ev: '运算符', arg: code };
+  }
+
+  // -------------------------------------------------------------- 按键
+
+  function press(kind, payload) {
+    lastError = null;
+    const p = phaseId();
+
+    switch (kind) {
+      case 'digit': return inputDigit(String(payload), p);
+      case 'dot': return inputDot(p);
+      case 'op': return inputOp(payload, p);
+      case 'lp': return inputLp(p);
+      case 'rp': return inputRp(p);
+      case 'const': return inputConst(payload, p);
+      case 'fn': return inputFn(payload, p);
+      case 'post': return inputPost(payload, p);
+      case 'equals': return doEquals(p);
+      case 'clear': return doClear();
+      case 'back': return doBack(p);
+      case 'error': step('出错'); return fail('已进入出错状态');
+      default: return fail(`未知按键 “${kind}”`, 'E_KEY');
+    }
+  }
+
+  function inputDigit(dig, p) {
+    if (!/^[0-9]$/.test(dig)) return fail('不是数字');
+    const r = step('数字');
+    if (!r.ok) return fail(`「${phaseName()}」相位不能输入数字`);
+
+    if (p === PHASE.结果 || p === PHASE.出错) tokens = [];
+    const last = tokens[tokens.length - 1];
+    if (p === PHASE.输入 && last && last.k === 'num') {
+      last.text = last.text === '0' ? dig : last.text + dig;
+      delete last.display;
+      return ok();
+    }
+    tokens.push({ k: 'num', text: dig, ev: '数字' });
+    return ok();
+  }
+
+  function inputDot(p) {
+    const last = tokens[tokens.length - 1];
+    if (p === PHASE.输入 && last && last.k === 'num') {
+      if (last.text.includes('.')) return fail('一个数里只能有一个小数点');
+    }
+    const r = step('小数点');
+    if (!r.ok) return fail(`「${phaseName()}」相位不能输入小数点`);
+
+    if (p === PHASE.结果 || p === PHASE.出错) tokens = [];
+    const tail = tokens[tokens.length - 1];
+    if (p === PHASE.输入 && tail && tail.k === 'num') {
+      if (!tail.text.includes('.')) tail.text += '.';
+      return ok();
+    }
+    tokens.push({ k: 'num', text: '0.', ev: '小数点' });
+    return ok();
+  }
+
+  function inputOp(code, p) {
+    code = Number(code);
+    if (!(code >= 1 && code <= 6)) return fail('没有这个运算符');
+    if (p === PHASE.空白 || p === PHASE.括号) {
+      return fail('表达式不能以运算符开头；要取负请按 ±');
+    }
+    const r = step('运算符', code);
+    if (!r.ok) return fail(`「${phaseName()}」相位不能输入运算符`);
+
+    if (p === PHASE.结果) tokens = [ansToken()];
+    if (p === PHASE.待符) tokens[tokens.length - 1] = opToken(code);
+    else tokens.push(opToken(code));
+    return ok();
+  }
+
+  function inputLp(p) {
+    const r = step('左括号');
+    if (!r.ok) return fail('此处不能加左括号');
+    if (phaseId() === PHASE.出错) {
+      sync();
+      return fail('括号嵌套超过 63 层');
+    }
+    if (p === PHASE.结果 || p === PHASE.出错) tokens = [];
+    tokens.push({ k: 'lp', ev: '左括号' });
+    return ok();
+  }
+
+  function inputRp(p) {
+    if (p === PHASE.空白 || p === PHASE.括号 || p === PHASE.待符) {
+      return fail('右括号没有匹配的左括号');
+    }
+    const r = step('右括号');
+    if (!r.ok) return fail('此处不能加右括号');
+    if (phaseId() === PHASE.出错) {
+      sync();
+      return fail('右括号没有匹配的左括号');
+    }
+    tokens.push({ k: 'rp', ev: '右括号' });
+    return ok();
+  }
+
+  function inputConst(code, p) {
+    code = Number(code);
+    if (!CONSTS[code]) return fail('没有这个常数');
+    const r = step('常数', code);
+    if (!r.ok) return fail(`「${phaseName()}」相位不能插入常数`);
+    if (p === PHASE.结果 || p === PHASE.出错) tokens = [];
+    tokens.push({ k: 'const', v: code, ev: '常数', arg: code });
+    return ok();
+  }
+
+  /**
+   * 结果相位上按一元函数：像卡片计算器一样**立刻**算出新结果，
+   * 而不是把函数挂在表达式上等下一个等号。
+   */
+  function applyImmediately(token) {
+    const list = [valueToken(lastResult), token];
+    const src = render(list, 'eval');
+    try {
+      const value = evaluate(src, { ans: lastResult ?? 0, angleMode, hooks });
+      lastResult = value;
+      tokens = [valueToken(value)];
+      return ok({ value, text: formatNumber(value), expr: render(list, 'display') });
+    } catch (err) {
+      step('出错');
+      return fail(err instanceof CalcError ? err.message : String(err.message), err.code ?? 'E_CALC');
+    }
+  }
+
+  function inputFn(key, p) {
+    const def = FUNCS[key];
+    if (!def) return fail(`未知函数 “${key}”`);
+    if (p === PHASE.结果) {
+      const r0 = step(def.ev, def.arg);
+      if (!r0.ok) return fail(`「${phaseName()}」相位不能求函数值`);
+      return applyImmediately({ k: 'fn', v: key, ev: def.ev, arg: def.arg });
+    }
+    const r = step(def.ev, def.arg);
+    if (!r.ok) return fail(`「${phaseName()}」相位不能对空表达式求函数值；先输入一个数`);
+    tokens.push({ k: 'fn', v: key, ev: def.ev, arg: def.arg });
+    return ok();
+  }
+
+  function inputPost(key, p) {
+    const def = FUNCS[key];
+    if (!def) return fail(`未知运算 “${key}”`);
+    if (p === PHASE.结果) {
+      const r0 = step(def.ev, def.arg);
+      if (!r0.ok) return fail(`「${phaseName()}」相位不能施加这个运算`);
+      return applyImmediately({ k: 'post', v: key, ev: def.ev, arg: def.arg });
+    }
+    const r = step(def.ev, def.arg);
+    if (!r.ok) return fail(`「${phaseName()}」相位不能施加这个运算`);
+    tokens.push({ k: 'post', v: key, ev: def.ev, arg: def.arg });
+    return ok();
+  }
+
+  function doClear() {
+    step('清除');
+    tokens = [];
+    lastError = null;
+    return ok({ cleared: true });
+  }
+
+  function doBack(p) {
+    if (p === PHASE.结果) return fail('等号之后不能退格；按 C 重新开始');
+    if (p === PHASE.出错) return fail('出错状态按 C 重新开始');
+    if (p === PHASE.空白) return fail('没有可删的内容');
+
+    const last = tokens[tokens.length - 1];
+    if (last && last.k === 'num' && last.text.length > 1) {
+      last.text = last.text.slice(0, -1);
+      delete last.display;
+      return ok();
+    }
+
+    tokens.pop();
+    sync();
+    return ok({ removed: last?.k });
+  }
+
+  function doEquals(p) {
+    if (p === PHASE.结果) return ok({ unchanged: true });
+    if (p === PHASE.空白) return fail('还没有输入任何东西');
+    if (p === PHASE.待符) return fail('运算符后面还缺一个操作数');
+
+    // 括号没闭合：替用户补上右括号，每一步仍然走状态机
+    let guard = 0;
+    while (dong() > 0) {
+      const r = step('右括号');
+      if (!r.ok || phaseId() === PHASE.出错) {
+        sync();
+        return fail('括号不匹配，无法求值');
+      }
+      tokens.push({ k: 'rp', ev: '右括号' });
+      if (++guard > 70) break;
+    }
+
+    const r = step('等号');
+    if (!r.ok) return fail(`「${phaseName()}」相位不能求值`);
+
+    const src = render(tokens, 'eval');
+    if (!tokens.length) return fail('还没有输入任何东西');
+
+    let value;
+    try {
+      value = evaluate(src, {
+        ans: lastResult ?? 0,
+        angleMode,
+        hooks,
+      });
+    } catch (err) {
+      step('出错');
+      const message = err instanceof CalcError ? err.message : `计算失败：${err.message}`;
+      return fail(message, err.code ?? 'E_CALC');
+    }
+
+    const exprText = render(tokens, 'display');
+    lastResult = value;
+    history.unshift({ expr: exprText, value, text: formatNumber(value) });
+    if (history.length > 40) history.pop();
+
+    tokens = [valueToken(value)];
+    return ok({ value, text: formatNumber(value), expr: exprText });
+  }
+
+  // -------------------------------------------------------------- 对外
+
+  function exprText() {
+    return render(tokens, 'display');
+  }
+
+  function evalText() {
+    return render(tokens, 'eval');
+  }
+
+  function preview() {
+    const d = dong();
+    return d > 0 ? ')'.repeat(d) : '';
+  }
+
+  /** 从别的面板塞一个结果进来（等价于「算完了一个数」） */
+  function loadValue(value) {
+    machine = new yao.Machine(ir);
+    machine.step('数字');
+    machine.step('等号');
+    tokens = [valueToken(value)];
+    lastResult = value;
+    return ok({ value });
+  }
+
+  function setAngleMode(mode) {
+    angleMode = mode === 'deg' ? 'deg' : 'rad';
+    return angleMode;
+  }
+
+  return {
+    press,
+    loadValue,
+    setAngleMode,
+    get angleMode() { return angleMode; },
+    get tokens() { return tokens; },
+    get state() { return machine.state; },
+    get phase() { return { id: phaseId(), name: phaseName() }; },
+    get ben() { return ben(); },
+    get dong() { return dong(); },
+    get depth() { return dong(); },
+    get bits() { return ben().toString(2).padStart(6, '0'); },
+    get glyph() { return yao.glyphOf(ben()); },
+    get hexagram() { return yao.nameOf(ben()); },
+    get display() { return tokens.length ? exprText() : '0'; },
+    get expression() { return exprText(); },
+    get preview() { return preview(); },
+    get lastResult() { return lastResult; },
+    get history() { return history; },
+    get log() { return log; },
+    get lastError() { return lastError; },
+    get machine() { return machine; },
+    get ir() { return ir; },
+    get tokensRef() { return tokens; },
+    evalText,
+    render,
+    sync,
+    clearHistory() { history = []; },
+  };
+}
+
+
+/* ───────── app/ui.js ───────── */
+/**
+ * 爻 · 算 —— 界面层
+ *
+ * 每次按键都先过 engine.press()（内部就是 state machine.step），
+ * 被机器拒绝的键只会响一声、抖一下，绝不改表达式。
+ */
+
+(function () {
+  const YAO = globalThis.__YAO__;
+  const SRC = globalThis.__YAO_CALC_SRC__ || '';
+  const $ = (id) => document.getElementById(id);
+
+  const engine = createEngine({
+    yao: YAO,
+    source: SRC,
+    hooks: {
+      integrate: (f, a, b) => integrate(f, a, b).value,
+      derivative: (f, x0) => derivative(f, x0).value,
+    },
+  });
+
+  // 给自动化测试 / 控制台留个入口
+  globalThis.__CALC__ = engine;
+
+  const esc = (s) =>
+    String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // -------------------------------------------------------------- 键盘布局
+
+  const SCI = [
+    ['sin', 'fn', 'sin'],
+    ['cos', 'fn', 'cos'],
+    ['tan', 'fn', 'tan'],
+    ['ln', 'fn', 'ln'],
+    ['lg', 'fn', 'lg'],
+    ['log₂', 'fn', 'log2'],
+
+    ['asin', 'fn', 'asin'],
+    ['acos', 'fn', 'acos'],
+    ['atan', 'fn', 'atan'],
+    ['eˣ', 'fn', 'exp'],
+    ['10ˣ', 'fn', 'pow10'],
+    ['√', 'fn', 'sqrt'],
+
+    ['x²', 'post', 'sq'],
+    ['x³', 'post', 'cube'],
+    ['x!', 'post', 'fact'],
+    ['1/x', 'post', 'recip'],
+    ['|x|', 'fn', 'abs'],
+    ['±', 'post', 'neg'],
+
+    ['∛', 'fn', 'cbrt'],
+    ['xʸ', 'op', 5],
+    ['mod', 'op', 6],
+    ['Ans', 'const', 3],
+    ['π', 'const', 1],
+    ['e', 'const', 2],
+  ];
+
+  const CORE = [
+    ['DEL', 'back', undefined, 'del'],
+    ['C', 'clear', undefined, 'clear'],
+    ['(', 'lp', undefined, 'op'],
+    [')', 'rp', undefined, 'op'],
+
+    ['7', 'digit', '7'],
+    ['8', 'digit', '8'],
+    ['9', 'digit', '9'],
+    ['÷', 'op', 4, 'op'],
+
+    ['4', 'digit', '4'],
+    ['5', 'digit', '5'],
+    ['6', 'digit', '6'],
+    ['×', 'op', 3, 'op'],
+
+    ['1', 'digit', '1'],
+    ['2', 'digit', '2'],
+    ['3', 'digit', '3'],
+    ['−', 'op', 2, 'op'],
+
+    ['0', 'digit', '0'],
+    ['.', 'dot', undefined, ''],
+    ['+', 'op', 1, 'op'],
+    ['=', 'equals', undefined, 'eq'],
+  ];
+
+  const TITLE = {
+    sin: '正弦', cos: '余弦', tan: '正切',
+    asin: '反正弦', acos: '反余弦', atan: '反正切',
+    ln: '自然对数 ln', lg: '常用对数 lg (log₁₀)', log2: '以 2 为底的对数',
+    exp: 'e 的幂', pow10: '10 的幂', sqrt: '平方根', cbrt: '立方根',
+    sq: '平方', cube: '立方', fact: '阶乘', recip: '倒数', abs: '绝对值', neg: '取负',
+  };
+
+  function makeKey(label, kind, value, cls) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'key' + (cls ? ' ' + cls : '') + (kind === 'fn' || kind === 'post' ? ' sci-key' : '');
+    b.textContent = label;
+    if (kind === 'fn' || kind === 'post') b.title = TITLE[value] || value;
+    b.addEventListener('click', (e) => {
+      e.preventDefault();
+      press(kind, value, b);
+      b.blur();
+    });
+    return b;
+  }
+
+  const sciEl = document.createElement('div');
+  sciEl.className = 'sci';
+  for (const [label, kind, value] of SCI) sciEl.appendChild(makeKey(label, kind, value));
+  $('pad').appendChild(sciEl);
+
+  const coreEl = document.createElement('div');
+  coreEl.className = 'core';
+  for (const [label, kind, value, cls] of CORE) coreEl.appendChild(makeKey(label, kind, value, cls));
+  $('pad').appendChild(coreEl);
+
+  // -------------------------------------------------------------- 提示条
+
+  let hintTimer = null;
+  const hintEl = $('hint');
+  const DEFAULT_HINT = '先输入数字，再按函数或运算符。括号没闭合时按 = 会自动补齐。';
+
+  function hint(text, kind = '') {
+    hintEl.textContent = text;
+    hintEl.className = 'hint ' + kind;
+    clearTimeout(hintTimer);
+    if (kind) hintTimer = setTimeout(() => { hintEl.textContent = DEFAULT_HINT; hintEl.className = 'hint'; }, 3200);
+  }
+
+  function reject(el) {
+    if (el) {
+      el.classList.remove('reject');
+      void el.offsetWidth;
+      el.classList.add('reject');
+      setTimeout(() => el.classList.remove('reject'), 340);
+    }
+    const scr = document.querySelector('.screen');
+    scr.classList.remove('shake');
+    void scr.offsetWidth;
+    scr.classList.add('shake');
+    setTimeout(() => scr.classList.remove('shake'), 320);
+  }
+
+  function press(kind, value, el) {
+    const r = engine.press(kind, value);
+    peek = null;
+    if (!r.ok) {
+      reject(el);
+      hint('此路不通：' + (r.message || '该相位不接受这个键'), 'err');
+    } else if (kind === 'equals' && r.value !== undefined) {
+      hint(r.text !== undefined ? `= ${r.text}` : '', 'ok');
+    } else if (kind === 'clear') {
+      hint('已清空', '');
+    } else {
+      hint('', '');
+    }
+    update();
+    return r;
+  }
+
+  // -------------------------------------------------------------- 渲染
+
+  const exprEl = $('expr');
+  const phasePill = $('phase-pill');
+  const depthPill = $('depth-pill');
+  const anglePill = $('angle-pill');
+
+  const mPhase = $('m-phase');
+  const mCode = $('m-code');
+  const mGlyph = $('m-glyph');
+  const mGua = $('m-gua');
+  const mBits = $('m-bits');
+  const mDepthFill = $('m-depth-fill');
+  const mDepthVal = $('m-depth-val');
+  const mLog = $('m-log');
+  const mSteps = $('m-steps');
+
+  const POS = ['初', '二', '三', '四', '五', '上'];
+  const bitEls = POS.map((p, i) => {
+    const d = document.createElement('div');
+    d.className = 'bit';
+    d.title = `${p}爻 · bit ${i}`;
+    d.innerHTML = '<b>0</b>';
+    mBits.appendChild(d);
+    return d;
+  });
+
+  // ------------------------------------------------------------ 相位面板
+
+  const PHASE_DESC = [
+    '还没输入任何东西',
+    '一个操作数刚结束',
+    '等右操作数',
+    '等括号里的内容',
+    '一个括号组刚闭合',
+    '等号算完了',
+    '等 C 或数字重来',
+  ];
+
+  const EVENT_LABEL = {
+    数字: '0-9',
+    小数点: '.',
+    运算符: '+ − × ÷ ^ mod',
+    左括号: '(',
+    右括号: ')',
+    常数: 'π e Ans',
+    三角函数: 'sin cos tan',
+    对数函数: 'ln lg log₂',
+    幂函数: '√ x² 1/x',
+    阶乘: 'x!',
+    负号: '±',
+    等号: '=',
+    清除: 'C',
+  };
+
+  const pillsEl = $('phase-pills');
+  const phasePills = PHASE_NAMES.map((name, i) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'phase-pill';
+    b.textContent = name;
+    b.title = PHASE_DESC[i];
+    b.addEventListener('click', () => {
+      peek = peek === i ? null : i;
+      renderPhases();
+    });
+    pillsEl.appendChild(b);
+    return b;
+  });
+
+  let peek = null;
+
+  function renderPhases() {
+    const cur = engine.ben;
+    const shown = peek === null ? cur : peek;
+
+    phasePills.forEach((b, i) => {
+      b.classList.toggle('on', i === cur);
+      b.classList.toggle('peek', peek !== null && i === shown);
+    });
+
+    $('pn-title').textContent = peek === null
+      ? `现在处于「${PHASE_NAMES[cur]}」相位 · ${PHASE_DESC[cur]}`
+      : `查看「${PHASE_NAMES[shown]}」相位 · ${PHASE_DESC[shown]}（再点一次回到当前）`;
+
+    const groups = engine.machine.groups;
+    const allowed = engine.ir.events.filter((ev) => {
+      if (ev.name === '出错') return false;
+      const g = groups.get(ev.name);
+      return g && (g.specific.has(shown) || g.wildcard);
+    });
+
+    $('phase-keys').innerHTML = allowed.length
+      ? allowed.map((ev) => `<span class="k">${esc(EVENT_LABEL[ev.name] ?? ev.name)}</span>`).join('')
+      : '<span class="none">这个相位没有可接受的键</span>';
+  }
+
+  function updateMachineLog() {
+    const rows = engine.log.slice(-7).reverse();
+    if (!rows.length) {
+      mLog.innerHTML = '<li><span class="empty">等一次按键</span><span></span></li>';
+      return;
+    }
+    mLog.innerHTML = rows
+      .map((r) => {
+        const from = PHASE_NAMES[YAO.ben(r.from)] || '?';
+        const to = r.ok ? PHASE_NAMES[YAO.ben(r.to)] || '?' : null;
+        const ev = r.ev + (r.arg ? `(${r.arg})` : '');
+        const right = r.ok
+          ? `<span class="to">${esc(to)}</span>`
+          : `<span class="ev fail">此路不通</span>`;
+        return `<li><span><span class="ev${r.ok ? '' : ' fail'}">${esc(ev)}</span><span class="arrow">→</span>${right}</span><span class="muted">${esc(from)}</span></li>`;
+      })
+      .join('');
+  }
+
+  let historyStamp = '';
+
+  function updateHistory() {
+    const h = engine.history;
+    const stamp = h.map((x) => x.expr + x.text).join('|');
+    if (stamp === historyStamp) return;
+    historyStamp = stamp;
+    const tape = $('tape');
+    if (!h.length) {
+      tape.innerHTML = '<li class="empty">还没有计算记录。按 = 之后，算式会落在这里。</li>';
+      return;
+    }
+    tape.innerHTML = h
+      .map(
+        (item, i) =>
+          `<li data-i="${i}" title="点击把这个结果送回计算器"><span class="h-expr">${esc(item.expr)}</span><span class="h-val">${esc(item.text)}</span></li>`
+      )
+      .join('');
+  }
+
+  function update() {
+    const text = engine.display;
+    const ghost = engine.preview;
+    exprEl.innerHTML = esc(text || '0') + (ghost ? `<span class="ghost">${esc(ghost)}</span>` : '');
+
+    const isErr = engine.phase.id === 6;
+    phasePill.textContent = engine.phase.name;
+    phasePill.className = 'pill' + (isErr ? ' error' : '');
+    depthPill.textContent = `括号 ${engine.depth}`;
+    anglePill.textContent = engine.angleMode === 'deg' ? 'DEG' : 'RAD';
+
+    mPhase.textContent = engine.phase.name;
+    mCode.textContent = `相位 ${engine.ben}`;
+    mGlyph.textContent = engine.glyph;
+    const bits = engine.bits;
+    mGua.textContent = `${engine.hexagram} · 本 ${bits} · 动 ${engine.depth}`;
+
+    for (let i = 0; i < 6; i++) {
+      const yang = bits[5 - i] === '1';
+      bitEls[i].className = 'bit ' + (yang ? 'yang' : 'yin');
+      bitEls[i].innerHTML = `<b>${bits[5 - i]}</b>`;
+    }
+
+    mDepthFill.style.width = `${Math.min(100, (engine.depth / 63) * 100)}%`;
+    mDepthVal.textContent = engine.depth;
+    mSteps.textContent = `${engine.machine.stepCount} 步`;
+
+    updateMachineLog();
+    updateHistory();
+    renderPhases();
+  }
+
+  // -------------------------------------------------------------- 历史点击
+
+  $('tape').addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-i]');
+    if (!li) return;
+    const item = engine.history[Number(li.dataset.i)];
+    if (!item) return;
+    engine.loadValue(item.value);
+    hint(`已取回 ${item.text}`, 'ok');
+    update();
+    document.querySelector('.screen').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+
+  $('clear-history').addEventListener('click', () => {
+    engine.clearHistory();
+    updateHistory();
+    hint('历史已清空');
+  });
+
+  // -------------------------------------------------------------- 角度制
+
+  const angleBtn = $('angle-btn');
+  angleBtn.addEventListener('click', () => {
+    const next = engine.angleMode === 'deg' ? 'rad' : 'deg';
+    engine.setAngleMode(next);
+    angleBtn.textContent = next === 'deg' ? 'DEG' : 'RAD';
+    angleBtn.classList.toggle('on', next === 'deg');
+    hint(next === 'deg' ? '三角函数按角度制计算' : '三角函数按弧度制计算', 'ok');
+    update();
+  });
+
+  // -------------------------------------------------------------- 复制
+
+  $('copy-btn').addEventListener('click', async () => {
+    const v = engine.lastResult;
+    if (v === null || v === undefined) {
+      hint('还没有结果可复制', 'err');
+      return;
+    }
+    const txt = String(v);
+    try {
+      await navigator.clipboard.writeText(txt);
+      hint(`已复制 ${txt}`, 'ok');
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = txt;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); hint(`已复制 ${txt}`, 'ok'); }
+      catch { hint('复制失败，请手动选择', 'err'); }
+      document.body.removeChild(ta);
+    }
+  });
+
+  // -------------------------------------------------------------- 微积分
+
+  let tabs = document.querySelectorAll('.tab');
+  tabs.forEach((t) =>
+    t.addEventListener('click', () => {
+      tabs.forEach((x) => x.classList.toggle('active', x === t));
+      $('form-int').classList.toggle('hidden', t.dataset.tab !== 'int');
+      $('form-der').classList.toggle('hidden', t.dataset.tab !== 'der');
+    })
+  );
+
+  let intResult = null;
+  let derResult = null;
+
+  function readNumber(id, label) {
+    const raw = $(id).value.trim();
+    if (!raw) throw new CalcError(`${label} 不能为空`);
+    return evaluate(raw, { angleMode: engine.angleMode, ans: engine.lastResult ?? 0 });
+  }
+
+  $('int-go').addEventListener('click', () => {
+    const out = $('int-out');
+    $('int-fill').disabled = true;
+    intResult = null;
+    try {
+      const { f } = compileFunction($('int-f').value.trim(), { angleMode: engine.angleMode });
+      const a = readNumber('int-a', '下限');
+      const b = readNumber('int-b', '上限');
+      const r = integrate(f, a, b);
+      intResult = r;
+      out.innerHTML =
+        `<span class="big">${esc(formatNumber(r.value, 12))}</span><br>` +
+        `<span class="k">区间</span> [${esc(formatNumber(a, 8))}, ${esc(formatNumber(b, 8))}] ` +
+        `<span class="k">·</span> ${r.evals} 次求值 <span class="k">·</span> ${r.segments} 段 ` +
+        `<span class="k">·</span> 误差估计 ${esc(r.error.toExponential(1))} ` +
+        `<span class="k">·</span> ${r.converged ? '已收敛' : '未收敛（可能不光滑）'}`;
+      $('int-fill').disabled = false;
+    } catch (err) {
+      out.innerHTML = `<span class="err">${esc(err.message)}</span>`;
+    }
+  });
+
+  $('der-go').addEventListener('click', () => {
+    const out = $('der-out');
+    $('der-fill').disabled = true;
+    derResult = null;
+    try {
+      const { f } = compileFunction($('der-f').value.trim(), { angleMode: engine.angleMode });
+      const x0 = readNumber('der-x', '求导点');
+      const r = derivative(f, x0);
+      derResult = r;
+      out.innerHTML =
+        `<span class="big">${esc(formatNumber(r.value, 12))}</span><br>` +
+        `<span class="k">在 x =</span> ${esc(formatNumber(x0, 10))} ` +
+        `<span class="k">·</span> h = ${esc(r.h.toExponential(1))} ` +
+        `<span class="k">·</span> ${r.evals} 次求值 ` +
+        `<span class="k">·</span> ${r.converged ? 'Richardson 已收敛' : '未完全收敛（该点可能不可导）'}`;
+      $('der-fill').disabled = false;
+    } catch (err) {
+      out.innerHTML = `<span class="err">${esc(err.message)}</span>`;
+    }
+  });
+
+  function fill(v) {
+    engine.loadValue(v);
+    update();
+    hint(`已填入 ${formatNumber(v)}`, 'ok');
+    document.querySelector('.calc').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  $('int-fill').addEventListener('click', () => intResult && fill(intResult.value));
+  $('der-fill').addEventListener('click', () => derResult && fill(derResult.value));
+
+  $('m-src').textContent = SRC;
+
+  // -------------------------------------------------------------- 物理键盘
+
+  const KEYMAP = {
+    '+': ['op', 1], '-': ['op', 2], '*': ['op', 3], '/': ['op', 4],
+    '^': ['op', 5], '%': ['op', 6], 'x': ['op', 3],
+    '(': ['lp'], ')': ['rp'], '.': ['dot'], ',': ['dot'],
+    'Enter': ['equals'], '=': ['equals'],
+    'Backspace': ['back'], 'Escape': ['clear'], 'Delete': ['clear'],
+    'p': ['const', 1], 'e': ['const', 2], 'a': ['const', 3],
+    's': ['fn', 'sin'], 'c': ['fn', 'cos'], 't': ['fn', 'tan'],
+    'l': ['fn', 'ln'], 'g': ['fn', 'lg'], 'r': ['fn', 'sqrt'],
+    '!': ['post', 'fact'], 'q': ['post', 'sq'],
+  };
+
+  window.addEventListener('keydown', (e) => {
+    const el = e.target;
+    if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+    if (/^[0-9]$/.test(e.key)) {
+      e.preventDefault();
+      press('digit', e.key);
+      return;
+    }
+    const m = KEYMAP[e.key];
+    if (!m) return;
+    e.preventDefault();
+    press(m[0], m[1]);
+  });
+
+  // -------------------------------------------------------------- 启动
+
+  angleBtn.textContent = engine.angleMode === 'deg' ? 'DEG' : 'RAD';
+  angleBtn.classList.toggle('on', engine.angleMode === 'deg');
+  hint(DEFAULT_HINT);
+  update();
+})();
+</script>
+</body>
+</html>

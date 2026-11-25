@@ -1,0 +1,4 @@
+[submodule "vendor/yao-lang"]
+	path = vendor/yao-lang
+	url = https://github.com/MaverickChou/yao-lang.git
+	branch = main

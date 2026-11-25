@@ -1,0 +1,17 @@
+{
+  "name": "yao-calculator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "爻 · 算 —— 由 yao-lang 状态机驱动的科学计算器（单文件网页版）",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test tests/expr.test.mjs tests/calculus.test.mjs tests/machine.test.mjs tests/engine.test.mjs",
+    "check": "node vendor/yao-lang/bin/yao.js check calc.yao",
+    "browser": "node scripts/browser-check.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "(MIT OR Apache-2.0)"
+}

@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: 单测
+        run: node --test tests/expr.test.mjs tests/calculus.test.mjs tests/machine.test.mjs tests/engine.test.mjs
+
+      - name: 状态机穷举校验
+        run: node vendor/yao-lang/bin/yao.js check calc.yao
+
+      - name: 构建产物与提交一致
+        run: |
+          node build.mjs
+          git diff --exit-code docs/index.html
+
+      - name: C 后端能吃下这份机器
+        run: |
+          node vendor/yao-lang/bin/yao.js build calc.yao --main -o /tmp/calc.c
+          test -s /tmp/calc.c
