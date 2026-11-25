@@ -155,9 +155,19 @@ vendor/yao-lang/         上游内核（git submodule）
 ### 状态机也能单独跑
 
 ```bash
-node vendor/yao-lang/bin/yao.js trace calc.yao 数字 数字 运算符 数字 等号
+node vendor/yao-lang/bin/yao.js trace calc.yao 数字 数字 运算符:1 数字 等号
 node vendor/yao-lang/bin/yao.js build calc.yao --main -o calc.c   # 需要 C 编译器
 ```
+
+带参数的事件要写成 `事件:编号`，只写事件名会报「需要参数」。
+
+| 事件 | 编号 |
+|---|---|
+| `运算符` | 1 `+`　2 `-`　3 `×`　4 `÷`　5 `^`　6 `%` |
+| `常数` | 1 π　2 e　3 Ans |
+| `三角函数` | 1 sin　2 cos　3 tan　4 asin　5 acos　6 atan |
+| `对数函数` | 1 ln　2 lg　3 log₂　4 e^x　5 10^x　6 sinh |
+| `幂函数` | 1 √　2 ∛　3 x²　4 x³　5 1/x　6 \|x\| |
 
 ---
 
